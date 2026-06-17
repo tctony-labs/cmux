@@ -41,6 +41,12 @@ cd "$CMUX_REPO"
 export PATH="$ZIG_PREFIX/bin:$PATH"
 export CMUX_ZIG="$ZIG_BIN"
 
+echo "==> Initializing submodules..."
+git submodule update --init --recursive
+
+echo "==> Ensuring ghosttykit..."
+"$CMUX_REPO/scripts/ensure-ghosttykit.sh"
+
 echo "==> using zig: $("$CMUX_ZIG" version) ($CMUX_ZIG)"
 echo "==> bundle id: $BUNDLE_ID"
 echo "==> signing: local ad-hoc"
