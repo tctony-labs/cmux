@@ -6883,11 +6883,20 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         )
         #endif
 
+        // Cmd+Shift+Click bypasses cmux's in-app preview (markdown render or
+        // file preview panel) and opens the file directly in the preferred
+        // external editor. Ghostty never fires its own `open_url` link action
+        // when shift is held (the link chord is an exact `ctrlOrSuper` match),
+        // so this AppKit release path is the only entrypoint that sees the
+        // shift modifier for the gesture.
+        let bypassCmuxPreview = modifierFlags.contains(.shift)
+
         // Remote-surface guard runs before shouldRoute so we never stat a local
         // path on the main thread for a remote workspace. When the cmux route
         // is applicable but split creation fails, fall back to the preferred
         // editor so the click never silently no-ops.
-        if let termSurface = terminalSurface,
+        if !bypassCmuxPreview,
+           let termSurface = terminalSurface,
            let workspace = termSurface.owningWorkspace(),
            !workspace.isRemoteTerminalSurface(termSurface.id),
            CommandClickFileOpenRouter.openInCmux(
