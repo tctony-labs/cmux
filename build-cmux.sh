@@ -38,7 +38,7 @@ fi
 
 cd "$CMUX_REPO"
 
-export PATH="$ZIG_PREFIX/bin:$PATH"
+export PATH="$PATH:$ZIG_PREFIX/bin"
 export CMUX_ZIG="$ZIG_BIN"
 
 echo "==> Initializing submodules..."
