@@ -12684,6 +12684,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                event.keyCode == 36 || event.keyCode == 76 {
                 return false
             }
+            // Cmd+Return runs the selected result's alternate action (Quick Open
+            // file results open in cmux's right-side preview). shouldSubmitPalette
+            // is false when Command is held, so this is handled before the plain
+            // submit below.
+            if event.keyCode == 36 || event.keyCode == 76,
+               event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .subtracting([.numericPad, .function, .capsLock]) == [.command] {
+                if paletteFieldEditorHasMarkedText {
+                    return false
+                }
+                NotificationCenter.default.post(name: .commandPaletteAlternateSubmitRequested, object: paletteWindow)
+                return true
+            }
             if shouldSubmitPalette {
                 if paletteFieldEditorHasMarkedText {
                     return false

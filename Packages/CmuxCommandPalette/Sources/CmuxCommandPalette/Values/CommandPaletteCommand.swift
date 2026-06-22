@@ -21,6 +21,11 @@ public struct CommandPaletteCommand: Identifiable {
     public let dismissOnRun: Bool
     /// The action executed on activation.
     public let action: () -> Void
+    /// Optional action executed when the command is activated with the Command
+    /// modifier held (Cmd+Enter). Returns `true` when it handled the
+    /// activation (so the palette dismisses) or `false` when it was a no-op
+    /// (the palette stays open). When nil, Cmd+Enter does nothing.
+    public let alternateAction: (() -> Bool)?
 
     /// Creates a command.
     public init(
@@ -32,7 +37,8 @@ public struct CommandPaletteCommand: Identifiable {
         kindLabel: String?,
         keywords: [String],
         dismissOnRun: Bool,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
+        alternateAction: (() -> Bool)? = nil
     ) {
         self.id = id
         self.rank = rank
@@ -43,6 +49,7 @@ public struct CommandPaletteCommand: Identifiable {
         self.keywords = keywords
         self.dismissOnRun = dismissOnRun
         self.action = action
+        self.alternateAction = alternateAction
     }
 
     /// Texts the search corpus indexes for this command.

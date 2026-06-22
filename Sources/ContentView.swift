@@ -2936,6 +2936,18 @@ struct ContentView: View {
             handleCommandPaletteSubmitRequest()
         })
 
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .commandPaletteAlternateSubmitRequested)) { notification in
+            guard isCommandPalettePresented else { return }
+            let requestedWindow = notification.object as? NSWindow
+            guard Self.shouldHandleCommandPaletteRequest(
+                observedWindow: observedWindow,
+                requestedWindow: requestedWindow,
+                keyWindow: NSApp.keyWindow,
+                mainWindow: NSApp.mainWindow
+            ) else { return }
+            runAlternateSelectedCommandPaletteResult()
+        })
+
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .commandPaletteDismissRequested)) { notification in
             guard isCommandPalettePresented else { return }
             let requestedWindow = notification.object as? NSWindow
@@ -5375,7 +5387,10 @@ struct ContentView: View {
                                         item.url, rootDir: rootDir, usePathPrefix: false)
                                     self.commandPaletteQuery = Self.commandPaletteFileSearchPrefix + p
                                 } else { Self.openFileInDefaultEditor(item.url) }
-                            }
+                            },
+                            alternateAction: (isDir || isSelectedDirectory)
+                                ? nil
+                                : { self.openQuickOpenFileInCmuxPreview(item.url) }
                         )
                     }
                     let results = entries.enumerated().map { (i, cmd) in
@@ -5629,10 +5644,26 @@ struct ContentView: View {
                     } else {
                         Self.openFileInDefaultEditor(url)
                     }
-                }
+                },
+                alternateAction: isDir ? nil : { self.openQuickOpenFileInCmuxPreview(url) }
             ))
         }
         return entries
+    }
+
+    /// Open a Quick Open file result in cmux's right-side preview (markdown
+    /// viewer or file preview panel), splitting from the currently focused
+    /// panel. Reuses the same routing as terminal Cmd+Click. Returns `true`
+    /// when the file was routed into a preview; returns `false` (a no-op) when
+    /// there is no focused panel or the file is not preview-routable (e.g. the
+    /// in-app preview toggles are off), leaving the palette open.
+    private func openQuickOpenFileInCmuxPreview(_ url: URL) -> Bool {
+        guard let context = focusedPanelContext else { return false }
+        return CommandClickFileOpenRouter.openInCmux(
+            workspace: context.workspace,
+            sourcePanelId: context.panelId,
+            filePath: url.path
+        )
     }
 
     private var resolvedFileSearchWorkspaceRoot: String? {
@@ -8919,6 +8950,30 @@ struct ContentView: View {
         }
 
         runCommandPaletteResolvedActivation(.selected(index: commandPaletteSelectedResultIndex))
+    }
+
+    /// Cmd+Enter on the selected result. Runs the command's alternate action
+    /// (for Quick Open file results: open in cmux's right-side preview) and
+    /// dismisses the palette only when the alternate handled the activation.
+    /// Commands without an alternate action — or files that are not
+    /// preview-routable — are an intentional no-op so the palette stays open.
+    private func runAlternateSelectedCommandPaletteResult() {
+        guard case .commands = commandPaletteMode,
+              commandPaletteHasCurrentResolvedResults,
+              !cachedCommandPaletteResults.isEmpty else {
+            return
+        }
+        let resolvedIndex = Self.commandPaletteResolvedSelectionIndex(
+            preferredCommandID: commandPaletteSelectionAnchorCommandID,
+            fallbackSelectedIndex: commandPaletteSelectedResultIndex,
+            resultIDs: cachedCommandPaletteResults.map(\.id)
+        )
+        let command = cachedCommandPaletteResults[resolvedIndex].command
+        guard let alternateAction = command.alternateAction else { return }
+        recordCommandPaletteUsage(command.id)
+        if alternateAction() {
+            dismissCommandPalette(restoreFocus: false)
+        }
     }
 
     private func handleCommandPaletteSubmitRequest() {
