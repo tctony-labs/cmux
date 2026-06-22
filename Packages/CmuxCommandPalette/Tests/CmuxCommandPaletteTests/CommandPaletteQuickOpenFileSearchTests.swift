@@ -184,6 +184,47 @@ final class CommandPaletteQuickOpenFileSearchTests: XCTestCase {
         XCTAssertEqual(result, "/opt/homebrew/")
     }
 
+    // MARK: directorySelectionPath (mode preservation)
+
+    func testDirectorySelectionFromEmptyRootStaysCrossDirectory() {
+        let root = "/Users/test/Projects/MyApp"
+        let url = URL(fileURLWithPath: root + "/Sources", isDirectory: true)
+        // Empty matching term = "@"-only / implicit-root state, which is
+        // cross-directory mode. Selecting a directory must not switch to path
+        // mode, so the "./" prefix is omitted.
+        let result = CommandPaletteQuickOpenFileSearch.directorySelectionPath(
+            for: url,
+            rootDir: root,
+            currentMatchingTerm: ""
+        )
+        XCTAssertEqual(result, "Sources/")
+
+        let (_, _, isPathMode) = CommandPaletteQuickOpenFileSearch.resolve(
+            matchingQuery: result,
+            workspaceRoot: root
+        )
+        XCTAssertFalse(isPathMode)
+    }
+
+    func testDirectorySelectionFromPathModeStaysPathMode() {
+        let root = "/Users/test/Projects/MyApp"
+        let url = URL(fileURLWithPath: root + "/Sources/Views", isDirectory: true)
+        // An explicit path-mode query ("@./Sources/") keeps the "./" prefix so
+        // hierarchical drilling stays in path mode.
+        let result = CommandPaletteQuickOpenFileSearch.directorySelectionPath(
+            for: url,
+            rootDir: root,
+            currentMatchingTerm: "./Sources/"
+        )
+        XCTAssertEqual(result, "./Sources/Views/")
+
+        let (_, _, isPathMode) = CommandPaletteQuickOpenFileSearch.resolve(
+            matchingQuery: result,
+            workspaceRoot: root
+        )
+        XCTAssertTrue(isPathMode)
+    }
+
     // MARK: commandPaletteFileSearchMatchingTerm
 
     func testMatchingTermEmpty() {

@@ -5637,8 +5637,13 @@ struct ContentView: View {
                 dismissOnRun: !isDir,
                 action: {
                     if isDir {
-                        let newPath = Self.commandPaletteFileSearchPathForDirectory(
-                            url, rootDir: rootDir, usePathPrefix: true
+                        // Selecting a directory result must preserve the current
+                        // search mode. The empty/root state ("@" only) is treated
+                        // as cross-directory, so the "./" path-mode prefix is
+                        // omitted there; an explicit path-mode query ("@./…")
+                        // keeps it.
+                        let newPath = Self.commandPaletteFileSearchDirectorySelectionPath(
+                            url, rootDir: rootDir, currentMatchingTerm: matchingQuery
                         )
                         self.commandPaletteQuery = Self.commandPaletteFileSearchPrefix + newPath
                     } else {

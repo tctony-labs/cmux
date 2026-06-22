@@ -147,6 +147,24 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         return path + "/"
     }
 
+    /// Computes the query path produced by selecting a directory result,
+    /// preserving the current search mode.
+    ///
+    /// `currentMatchingTerm` is the query with the Quick Open prefix stripped.
+    /// An empty term is the implicit-root state, which counts as
+    /// cross-directory mode, so the `./` path-mode prefix is omitted. An
+    /// explicit path-mode query (`./…`) keeps the prefix so it stays in path
+    /// mode.
+    public static func directorySelectionPath(
+        for url: URL,
+        rootDir: String,
+        currentMatchingTerm: String
+    ) -> String {
+        let atImplicitRoot = currentMatchingTerm
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return pathForDirectory(url, rootDir: rootDir, usePathPrefix: !atImplicitRoot)
+    }
+
     /// Classifies how Quick Open should open a file URL.
     public static func openAction(for url: URL) -> CommandPaletteQuickOpenFileOpenAction {
         let resolvedURL = url.resolvingSymlinksInPath()
