@@ -5386,11 +5386,16 @@ struct ContentView: View {
                                     let p = Self.commandPaletteFileSearchPathForDirectory(
                                         item.url, rootDir: rootDir, usePathPrefix: false)
                                     self.commandPaletteQuery = Self.commandPaletteFileSearchPrefix + p
-                                } else { Self.openFileInDefaultEditor(item.url) }
+                                } else if !self.openQuickOpenFileInCmuxPreview(item.url) {
+                                    Self.openFileInDefaultEditor(item.url)
+                                }
                             },
                             alternateAction: (isDir || isSelectedDirectory)
                                 ? nil
-                                : { self.openQuickOpenFileInCmuxPreview(item.url) }
+                                : {
+                                    Self.openFileInDefaultEditor(item.url)
+                                    return true
+                                }
                         )
                     }
                     let results = entries.enumerated().map { (i, cmd) in
@@ -5646,11 +5651,14 @@ struct ContentView: View {
                             url, rootDir: rootDir, currentMatchingTerm: matchingQuery
                         )
                         self.commandPaletteQuery = Self.commandPaletteFileSearchPrefix + newPath
-                    } else {
+                    } else if !self.openQuickOpenFileInCmuxPreview(url) {
                         Self.openFileInDefaultEditor(url)
                     }
                 },
-                alternateAction: isDir ? nil : { self.openQuickOpenFileInCmuxPreview(url) }
+                alternateAction: isDir ? nil : {
+                    Self.openFileInDefaultEditor(url)
+                    return true
+                }
             ))
         }
         return entries
@@ -5659,9 +5667,10 @@ struct ContentView: View {
     /// Open a Quick Open file result in cmux's right-side preview (markdown
     /// viewer or file preview panel), splitting from the currently focused
     /// panel. Reuses the same routing as terminal Cmd+Click. Returns `true`
-    /// when the file was routed into a preview; returns `false` (a no-op) when
-    /// there is no focused panel or the file is not preview-routable (e.g. the
-    /// in-app preview toggles are off), leaving the palette open.
+    /// when the file was routed into a preview; returns `false` when there is
+    /// no focused panel or the file is not preview-routable (e.g. the in-app
+    /// preview toggles are off), so the caller can fall back to the external
+    /// editor — mirroring how terminal Cmd+Click falls back.
     private func openQuickOpenFileInCmuxPreview(_ url: URL) -> Bool {
         guard let context = focusedPanelContext else { return false }
         return CommandClickFileOpenRouter.openInCmux(
@@ -8958,10 +8967,11 @@ struct ContentView: View {
     }
 
     /// Cmd+Enter on the selected result. Runs the command's alternate action
-    /// (for Quick Open file results: open in cmux's right-side preview) and
+    /// (for Quick Open file results: open directly in the external editor,
+    /// bypassing the cmux preview — mirroring terminal Cmd+Shift+Click) and
     /// dismisses the palette only when the alternate handled the activation.
-    /// Commands without an alternate action — or files that are not
-    /// preview-routable — are an intentional no-op so the palette stays open.
+    /// Commands without an alternate action are an intentional no-op so the
+    /// palette stays open.
     private func runAlternateSelectedCommandPaletteResult() {
         guard case .commands = commandPaletteMode,
               commandPaletteHasCurrentResolvedResults,

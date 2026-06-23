@@ -248,3 +248,11 @@ Core skill map:
 - `cmux-shared-behavior`: shared action paths for multi-entrypoint behavior and optimistic updates.
 - `cmux-ghostty`: Ghostty submodule and GhosttyKit workflow.
 - `cmux-release`: release, version bump, changelog, pretag guard, and release asset workflow.
+
+## tctony fork
+
+改完代码之后，使用固定的 tag `dev` 来 reload：
+
+```bash
+./scripts/reload.sh --tag dev
+```

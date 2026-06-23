@@ -12685,9 +12685,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return false
             }
             // Cmd+Return runs the selected result's alternate action (Quick Open
-            // file results open in cmux's right-side preview). shouldSubmitPalette
-            // is false when Command is held, so this is handled before the plain
-            // submit below.
+            // file results open directly in the external editor, bypassing the
+            // cmux preview). shouldSubmitPalette is false when Command is held,
+            // so this is handled before the plain submit below.
             if event.keyCode == 36 || event.keyCode == 76,
                event.modifierFlags
                 .intersection(.deviceIndependentFlagsMask)
