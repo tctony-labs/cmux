@@ -235,13 +235,19 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
     /// Returns whether a directory should be skipped during recursive Quick Open search.
     public static func shouldSkipDirectory(_ name: String) -> Bool {
         switch name {
-        case "node_modules", ".build", "DerivedData",
-             ".svn", ".hg", "__pycache__", ".cache",
-             "Pods", "Carthage", ".tox", ".eggs",
-             "build", "dist", ".next", ".nuxt",
-             "target", ".dart_tool", ".idea",
-             ".vscode", ".vs", ".swiftpm",
-             "vendor", "bower_components":
+        case ".git", "node_modules", "bower_components",
+             "vendor", "Pods", "Carthage",
+             "DerivedData", ".build", ".swiftpm",
+             "target", "build", "dist",
+             ".next", ".nuxt", ".dart_tool",
+             ".cache", ".tox", ".eggs",
+             "__pycache__", ".pytest_cache", ".mypy_cache",
+             ".ruff_cache", ".turbo", ".nx",
+             ".parcel-cache", ".svelte-kit", ".vercel",
+             ".output", "coverage", ".nyc_output",
+             ".venv", "venv", ".gradle",
+             ".svn", ".hg", ".idea", ".vs",
+             ".yarn":
             return true
         default:
             return false
@@ -272,7 +278,10 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         for url in rootContents {
             if Task.isCancelled { return [] }
             let isDir = isDirectory(url)
-            if isDir, !shouldSkipDirectory(url.lastPathComponent) {
+            if isDir, shouldSkipDirectory(url.lastPathComponent) {
+                continue
+            }
+            if isDir {
                 let canonicalPath = url.resolvingSymlinksInPath().path
                 if seenTopDirectoryPaths.insert(canonicalPath).inserted {
                     topDirs.append(url)

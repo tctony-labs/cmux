@@ -491,10 +491,19 @@ final class CommandPaletteQuickOpenFileSearchTests: XCTestCase {
 
     func testKnownSkipDirectories() {
         let skips: [String] = [
-            "node_modules", ".build", "DerivedData",
-            ".svn", ".hg", "__pycache__", ".cache",
-            "Pods", "Carthage", "build", "dist", "target",
-            ".vscode", ".idea", "vendor",
+            ".git", "node_modules", "bower_components",
+            "vendor", "Pods", "Carthage",
+            "DerivedData", ".build", ".swiftpm",
+            "target", "build", "dist",
+            ".next", ".nuxt", ".dart_tool",
+            ".cache", ".tox", ".eggs",
+            "__pycache__", ".pytest_cache", ".mypy_cache",
+            ".ruff_cache", ".turbo", ".nx",
+            ".parcel-cache", ".svelte-kit", ".vercel",
+            ".output", "coverage", ".nyc_output",
+            ".venv", "venv", ".gradle",
+            ".svn", ".hg", ".idea", ".vs",
+            ".yarn",
         ]
         for name in skips {
             XCTAssertTrue(
@@ -507,7 +516,7 @@ final class CommandPaletteQuickOpenFileSearchTests: XCTestCase {
     func testNormalDirectoriesNotSkipped() {
         XCTAssertFalse(CommandPaletteQuickOpenFileSearch.shouldSkipDirectory("Sources"))
         XCTAssertFalse(CommandPaletteQuickOpenFileSearch.shouldSkipDirectory("src"))
-        XCTAssertFalse(CommandPaletteQuickOpenFileSearch.shouldSkipDirectory(".git"))
+        XCTAssertFalse(CommandPaletteQuickOpenFileSearch.shouldSkipDirectory(".vscode"))
         XCTAssertFalse(CommandPaletteQuickOpenFileSearch.shouldSkipDirectory(".test"))
         XCTAssertFalse(CommandPaletteQuickOpenFileSearch.shouldSkipDirectory("lib"))
         XCTAssertFalse(CommandPaletteQuickOpenFileSearch.shouldSkipDirectory("MyApp"))
