@@ -263,7 +263,7 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         guard let rootContents = try? fileManager.contentsOfDirectory(
             at: rootURL,
             includingPropertiesForKeys: dirKeys,
-            options: [.skipsHiddenFiles]
+            options: []
         ) else { return [] }
 
         var topDirs: [URL] = []
@@ -429,7 +429,7 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
             guard let contents = try? fileManager.contentsOfDirectory(
                 at: curDir,
                 includingPropertiesForKeys: dirKeys,
-                options: [.skipsHiddenFiles]
+                options: []
             ) else { continue }
             for url in contents {
                 if Task.isCancelled { return localHeap }
