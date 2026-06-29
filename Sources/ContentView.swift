@@ -5357,8 +5357,7 @@ struct ContentView: View {
                     var titleIndicesByIndex: [Int: Set<Int>] = [:]
                     let entries = scored.enumerated().map { (i, item) -> CommandPaletteCommand in
                         let name = item.url.lastPathComponent
-                        let rp = item.url.path.hasPrefix(rootDir + "/")
-                            ? String(item.url.path.dropFirst(rootDir.count + 1)) : item.url.path
+                        let rp = Self.quickOpenDisplayPath(url: item.url, rootDir: rootDir) ?? item.url.path
                         let isDir = Self.isDirectory(item.url)
                         let matchCandidate = isDir ? rp + "/" : rp
                         let isSelectedDirectory = isDir

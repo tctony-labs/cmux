@@ -131,12 +131,11 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
     ) -> String {
         let homeDir = NSHomeDirectory()
         let path = url.path
-        if path.hasPrefix(rootDir + "/") {
-            let relative = String(path.dropFirst(rootDir.count + 1))
+        if let relative = displayPath(url: url, rootDir: rootDir) {
+            if relative.isEmpty {
+                return usePathPrefix ? "./" : ""
+            }
             return usePathPrefix ? "./" + relative + "/" : relative + "/"
-        }
-        if path == rootDir {
-            return usePathPrefix ? "./" : ""
         }
         if path.hasPrefix(homeDir + "/") {
             return "~" + String(path.dropFirst(homeDir.count)) + "/"
@@ -216,8 +215,9 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
     /// Lists files in a directory, sorted with directories first.
     public static func listFiles(inDirectory dir: String, maxCount: Int) -> [URL] {
         let fileManager = FileManager.default
+        let directoryURL = directoryURLForListing(path: dir)
         guard let contents = try? fileManager.contentsOfDirectory(
-            at: URL(fileURLWithPath: dir, isDirectory: true),
+            at: directoryURL,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: []
         ) else {
@@ -262,7 +262,7 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         guard !query.isEmpty else { return [] }
         let fileManager = FileManager.default
         let dirKeys: [URLResourceKey] = [.isDirectoryKey]
-        let rootURL = URL(fileURLWithPath: rootDir, isDirectory: true)
+        let rootURL = directoryURLForListing(path: rootDir)
         let ideal = fuzzyScore(query: query, candidate: query)
         let threshold = ideal.map { Int(Double($0) * fastQuitRatio) }
 
@@ -385,18 +385,31 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
 
     /// Returns a lowercase path relative to the root when possible.
     public static func relativePath(url: URL, rootDir: String) -> String {
+        if let displayPath = displayPath(url: url, rootDir: rootDir) {
+            return displayPath.lowercased()
+        }
+        return url.lastPathComponent.lowercased()
+    }
+
+    /// Returns a display path relative to the root, following a symlinked root if needed.
+    public static func displayPath(url: URL, rootDir: String) -> String? {
         let path = url.path
         if path.hasPrefix(rootDir + "/") {
-            return String(path.dropFirst(rootDir.count + 1)).lowercased()
+            return String(path.dropFirst(rootDir.count + 1))
+        }
+        if path == rootDir {
+            return ""
         }
 
         let resolvedPath = url.resolvingSymlinksInPath().path
         let resolvedRoot = URL(fileURLWithPath: rootDir, isDirectory: true).resolvingSymlinksInPath().path
         if resolvedPath.hasPrefix(resolvedRoot + "/") {
-            return String(resolvedPath.dropFirst(resolvedRoot.count + 1)).lowercased()
+            return String(resolvedPath.dropFirst(resolvedRoot.count + 1))
         }
-
-        return url.lastPathComponent.lowercased()
+        if resolvedPath == resolvedRoot {
+            return ""
+        }
+        return nil
     }
 
     private static func searchCandidatePath(url: URL, rootDir: String, isDirectory: Bool) -> String {
@@ -416,6 +429,10 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
             return false
         }
         return String(data: data, encoding: .utf8) != nil
+    }
+
+    private static func directoryURLForListing(path: String) -> URL {
+        URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath()
     }
 
     private static func searchCrossDirectoryBranch(

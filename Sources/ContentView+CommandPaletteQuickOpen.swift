@@ -133,4 +133,8 @@ extension ContentView {
     nonisolated static func quickOpenRelativePath(url: URL, rootDir: String) -> String {
         CommandPaletteQuickOpenFileSearch.relativePath(url: url, rootDir: rootDir)
     }
+
+    nonisolated static func quickOpenDisplayPath(url: URL, rootDir: String) -> String? {
+        CommandPaletteQuickOpenFileSearch.displayPath(url: url, rootDir: rootDir)
+    }
 }
