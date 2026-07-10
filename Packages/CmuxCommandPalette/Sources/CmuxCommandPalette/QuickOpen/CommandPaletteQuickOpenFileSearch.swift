@@ -214,9 +214,8 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
 
     /// Lists files in a directory, sorted with directories first.
     public static func listFiles(inDirectory dir: String, maxCount: Int) -> [URL] {
-        let fileManager = FileManager.default
-        let directoryURL = directoryURLForListing(path: dir)
-        guard let contents = try? fileManager.contentsOfDirectory(
+        let directoryURL = URL(fileURLWithPath: dir, isDirectory: true)
+        guard let contents = try? contentsOfDirectory(
             at: directoryURL,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: []
@@ -260,13 +259,12 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         rootDir: String
     ) async -> [CommandPaletteQuickOpenScoredFile] {
         guard !query.isEmpty else { return [] }
-        let fileManager = FileManager.default
         let dirKeys: [URLResourceKey] = [.isDirectoryKey]
-        let rootURL = directoryURLForListing(path: rootDir)
+        let rootURL = URL(fileURLWithPath: rootDir, isDirectory: true)
         let ideal = fuzzyScore(query: query, candidate: query)
         let threshold = ideal.map { Int(Double($0) * fastQuitRatio) }
 
-        guard let rootContents = try? fileManager.contentsOfDirectory(
+        guard let rootContents = try? contentsOfDirectory(
             at: rootURL,
             includingPropertiesForKeys: dirKeys,
             options: []
@@ -431,8 +429,23 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         return String(data: data, encoding: .utf8) != nil
     }
 
-    private static func directoryURLForListing(path: String) -> URL {
-        URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath()
+    private static func contentsOfDirectory(
+        at logicalDirectory: URL,
+        includingPropertiesForKeys keys: [URLResourceKey],
+        options: FileManager.DirectoryEnumerationOptions
+    ) throws -> [URL] {
+        let resolvedDirectory = logicalDirectory.resolvingSymlinksInPath()
+        let resolvedContents = try FileManager.default.contentsOfDirectory(
+            at: resolvedDirectory,
+            includingPropertiesForKeys: keys,
+            options: options
+        )
+        return resolvedContents.map { resolvedURL in
+            logicalDirectory.appendingPathComponent(
+                resolvedURL.lastPathComponent,
+                isDirectory: isDirectory(resolvedURL)
+            )
+        }
     }
 
     private static func searchCrossDirectoryBranch(
@@ -441,7 +454,6 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         rootDirectory: URL,
         threshold: Int?
     ) -> [(score: Int, url: URL, depth: Int)] {
-        let fileManager = FileManager.default
         let dirKeys: [URLResourceKey] = [.isDirectoryKey]
         var localHeap: [(score: Int, url: URL, depth: Int)] = []
         var scanned = 0
@@ -452,7 +464,7 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
             if Task.isCancelled { return localHeap }
             let (curDir, depth) = queue[head]
             head += 1
-            guard let contents = try? fileManager.contentsOfDirectory(
+            guard let contents = try? contentsOfDirectory(
                 at: curDir,
                 includingPropertiesForKeys: dirKeys,
                 options: []
