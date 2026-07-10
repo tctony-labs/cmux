@@ -6,7 +6,7 @@ import Testing
 @Suite
 struct CommandPaletteQuickOpenSymlinkWorkspaceTests {
     @Test
-    func listFilesFollowsSymlinkWorkspaceRoot() throws {
+    func listFilesRetainsSymlinkWorkspaceRoot() throws {
         let fixture = try SymlinkWorkspaceFixture()
         defer { fixture.cleanup() }
 
@@ -15,11 +15,14 @@ struct CommandPaletteQuickOpenSymlinkWorkspaceTests {
             maxCount: 100
         )
 
-        #expect(results.map(\.lastPathComponent).contains("Sources"))
+        let expectedPath = fixture.symlinkRoot
+            .appendingPathComponent("Sources", isDirectory: true)
+            .path
+        #expect(results.contains { $0.path == expectedPath })
     }
 
     @Test
-    func crossDirectorySearchFollowsSymlinkWorkspaceRoot() async throws {
+    func crossDirectorySearchRetainsSymlinkWorkspaceRoot() async throws {
         let fixture = try SymlinkWorkspaceFixture()
         defer { fixture.cleanup() }
 
@@ -28,8 +31,10 @@ struct CommandPaletteQuickOpenSymlinkWorkspaceTests {
             rootDir: fixture.symlinkRoot.path
         )
 
-        let expectedPath = fixture.contentView.resolvingSymlinksInPath().path
-        #expect(results.contains { $0.url.resolvingSymlinksInPath().path == expectedPath })
+        let expectedPath = fixture.symlinkRoot
+            .appendingPathComponent("Sources/ContentView.swift")
+            .path
+        #expect(results.contains { $0.url.path == expectedPath })
     }
 
     @Test
