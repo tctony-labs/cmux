@@ -960,8 +960,8 @@ html { scroll-behavior: smooth; }
     pedantic: false,
     renderer: {
       codespan(code) {
-        var raw = code || '';
-        return '<code>' + escapeHtml(raw) + '</code>';
+        // marked passes inline code to renderers with HTML entities already escaped.
+        return '<code>' + (code || '') + '</code>';
       },
       code(code, infostring, escaped) {
         var raw = code || '';
