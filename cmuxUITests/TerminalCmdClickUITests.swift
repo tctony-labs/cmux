@@ -181,6 +181,55 @@ final class TerminalCmdClickUITests: XCTestCase {
         )
     }
 
+    func testCmdClickFileLineReferenceOpensExactlyOnce() throws {
+        let fileName = "Sources/GhosttyTerminalView.swift"
+        let app = launchApp(
+            displayMode: .raw,
+            lineFormat: .log,
+            fileName: fileName,
+            displaySuffix: ":12",
+            captureOpenPaths: true,
+            captureHoverDiagnostics: false
+        )
+        defer { app.terminate() }
+
+        let setup = try waitForReadySetup()
+        let result = try runCommand(action: "cmd_click_token")
+
+        XCTAssertEqual(result["lastCommandSucceeded"] as? String, "1", "Expected file:line to open. result=\(result)")
+        XCTAssertEqual(result["lastCommandOpenedPath"] as? String, setup.expectedPath)
+        XCTAssertEqual(waitForCapturedOpenPaths(timeout: 5.0), [setup.expectedPath])
+        XCTAssertTrue(
+            waitForOpenCountToStay(1, timeout: 0.75),
+            "Expected file:line to trigger exactly one open. opened=\(loadCapturedOpenPaths())"
+        )
+    }
+
+    func testCmdClickGitDiffHeaderOpensFileWithoutBrowserURL() throws {
+        let fileName = "rules/tony.md"
+        let app = launchApp(
+            displayMode: .raw,
+            lineFormat: .log,
+            fileName: fileName,
+            linePrefix: "--- a/",
+            captureOpenPaths: true,
+            captureOpenURLs: true,
+            captureHoverDiagnostics: false,
+            openSupportedFilesInCmux: true
+        )
+        defer { app.terminate() }
+
+        let setup = try waitForReadySetup()
+        let result = try runCommand(action: "cmd_click_token")
+
+        XCTAssertEqual(result["lastCommandSucceeded"] as? String, "1", "Expected diff path to open. result=\(result)")
+        XCTAssertEqual(result["lastCommandOpenedPath"] as? String, setup.expectedPath)
+        XCTAssertTrue(
+            waitForOpenCountToStay(0, timeout: 0.75, path: openURLCapturePath),
+            "Expected diff path not to open a browser URL. urls=\(loadCapturedOpenPaths(path: openURLCapturePath))"
+        )
+    }
+
     func testStationaryCmdClickOsc8FileHyperlinkOpensURL() throws {
         let fileName = "Issue 3557 Link.md"
         let app = launchApp(
@@ -801,6 +850,7 @@ final class TerminalCmdClickUITests: XCTestCase {
         displayAsAbsolutePath: Bool = false,
         extraFileNames: [String] = [],
         captureOpenPaths: Bool,
+        captureOpenURLs: Bool = false,
         captureHoverDiagnostics: Bool,
         openSupportedFilesInCmux: Bool = false,
         openMarkdownInCmuxViewer: Bool? = nil,
@@ -838,7 +888,7 @@ final class TerminalCmdClickUITests: XCTestCase {
         if captureOpenPaths {
             app.launchEnvironment["CMUX_UI_TEST_CAPTURE_OPEN_PATH"] = openCapturePath
         }
-        if lineFormat == .osc8 {
+        if lineFormat == .osc8 || captureOpenURLs {
             app.launchEnvironment["CMUX_UI_TEST_CAPTURE_OPEN_URL_PATH"] = openURLCapturePath
         }
         if captureHoverDiagnostics {
@@ -895,15 +945,19 @@ final class TerminalCmdClickUITests: XCTestCase {
         return openedPaths
     }
 
-    private func waitForOpenCountToStay(_ expectedCount: Int, timeout: TimeInterval) -> Bool {
+    private func waitForOpenCountToStay(
+        _ expectedCount: Int,
+        timeout: TimeInterval,
+        path: String? = nil
+    ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if loadCapturedOpenPaths().count != expectedCount {
+            if loadCapturedOpenPaths(path: path).count != expectedCount {
                 return false
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
-        return loadCapturedOpenPaths().count == expectedCount
+        return loadCapturedOpenPaths(path: path).count == expectedCount
     }
 
     private func waitForHoverDiagnostics(timeout: TimeInterval) -> [String: Any]? {

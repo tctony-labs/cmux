@@ -156,6 +156,39 @@ extension String {
         return candidates
     }
 
+    /// Splits a terminal file reference such as `Sources/App.swift:23` or
+    /// `Sources/App.swift:25-29` into its path token and first line number.
+    func terminalFileLineReference() -> (pathToken: String, lineNumber: Int)? {
+        guard let colon = lastIndex(of: ":") else { return nil }
+
+        let pathToken = String(self[..<colon])
+        let location = self[index(after: colon)...].split(
+            separator: "-",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard !pathToken.isEmpty,
+              let first = location.first,
+              !first.isEmpty,
+              first.allSatisfy(\.isNumber),
+              let lineNumber = Int(first),
+              lineNumber > 0 else {
+            return nil
+        }
+
+        if location.count == 2 {
+            let last = location[1]
+            guard !last.isEmpty,
+                  last.allSatisfy(\.isNumber),
+                  let endLineNumber = Int(last),
+                  endLineNumber >= lineNumber else {
+                return nil
+            }
+        }
+
+        return (pathToken, lineNumber)
+    }
+
     /// Path-token candidates around a column of a visible terminal line: the
     /// raw whitespace-delimited segment first, then the shell-escape-aware
     /// token.
@@ -173,6 +206,31 @@ extension String {
         append(shellEscapedToken(containingColumn: column))
 
         return candidates
+    }
+
+    /// Returns the repository-relative path under a git diff file header.
+    /// The `a/` or `b/` marker is metadata and is intentionally excluded.
+    func gitDiffPathToken(containingColumn column: Int) -> String? {
+        let marker: String
+        if hasPrefix("--- a/") {
+            marker = "--- a/"
+        } else if hasPrefix("+++ b/") {
+            marker = "+++ b/"
+        } else {
+            return nil
+        }
+
+        let characters = Array(self)
+        let tokenStart = marker.count - 2
+        guard column >= tokenStart, column < characters.count else { return nil }
+
+        let pathStart = marker.count
+        let pathEnd = characters[pathStart...].firstIndex(of: "\t") ?? characters.endIndex
+        guard column < pathEnd, pathStart < pathEnd else { return nil }
+
+        let path = String(characters[pathStart..<pathEnd])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.isEmpty ? nil : path
     }
 
     private func rawPathSegment(containingColumn column: Int) -> String? {

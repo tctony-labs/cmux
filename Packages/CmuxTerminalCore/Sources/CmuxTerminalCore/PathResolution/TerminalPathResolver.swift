@@ -39,27 +39,53 @@ public struct TerminalPathResolver: Sendable {
     ///   - cwd: The surface's working directory used for relative candidates.
     /// - Returns: The first existing standardized path, or `nil`.
     public func resolveQuicklookPath(_ rawText: String, cwd: String?) -> String? {
+        resolveQuicklookFileReference(rawText, cwd: cwd)?.path
+    }
+
+    /// Resolves raw terminal text to an existing path and optional source
+    /// line number.
+    ///
+    /// A trailing `:line` or `:start-end` suffix is treated as terminal
+    /// location metadata when the path before it exists. The first line of a
+    /// range is returned.
+    ///
+    /// - Parameters:
+    ///   - rawText: The raw text under the cursor or selection.
+    ///   - cwd: The surface's working directory used for relative candidates.
+    /// - Returns: The first existing path and its optional line, or `nil`.
+    public func resolveQuicklookFileReference(
+        _ rawText: String,
+        cwd: String?
+    ) -> (path: String, lineNumber: Int?)? {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         var seenPaths: Set<String> = []
         for token in trimmed.pathResolutionCandidates() {
-            let normalizedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !normalizedToken.isEmpty else { continue }
-
-            let expandedToken = (normalizedToken as NSString).expandingTildeInPath
-            let candidatePath: String
-            if expandedToken.hasPrefix("/") {
-                candidatePath = expandedToken
-            } else {
-                guard let cwd, !cwd.isEmpty else { continue }
-                candidatePath = (cwd as NSString).appendingPathComponent(expandedToken)
+            var references: [(pathToken: String, lineNumber: Int?)] = []
+            if let lineReference = token.terminalFileLineReference() {
+                references.append((lineReference.pathToken, lineReference.lineNumber))
             }
+            references.append((token, nil))
 
-            let standardizedPath = (candidatePath as NSString).standardizingPath
-            guard seenPaths.insert(standardizedPath).inserted else { continue }
-            if fileExists(standardizedPath) {
-                return standardizedPath
+            for reference in references {
+                let normalizedToken = reference.pathToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !normalizedToken.isEmpty else { continue }
+
+                let expandedToken = (normalizedToken as NSString).expandingTildeInPath
+                let candidatePath: String
+                if expandedToken.hasPrefix("/") {
+                    candidatePath = expandedToken
+                } else {
+                    guard let cwd, !cwd.isEmpty else { continue }
+                    candidatePath = (cwd as NSString).appendingPathComponent(expandedToken)
+                }
+
+                let standardizedPath = (candidatePath as NSString).standardizingPath
+                guard seenPaths.insert(standardizedPath).inserted else { continue }
+                if fileExists(standardizedPath) {
+                    return (standardizedPath, reference.lineNumber)
+                }
             }
         }
 
@@ -81,10 +107,15 @@ public struct TerminalPathResolver: Sendable {
         _ line: String,
         column: Int,
         cwd: String
-    ) -> (rawToken: String, path: String)? {
+    ) -> (rawToken: String, path: String, lineNumber: Int?)? {
+        if let rawToken = line.gitDiffPathToken(containingColumn: column),
+           let reference = resolveQuicklookFileReference(rawToken, cwd: cwd) {
+            return (rawToken, reference.path, reference.lineNumber)
+        }
+
         for rawToken in line.pathTokenCandidates(containingColumn: column) {
-            if let resolvedPath = resolveQuicklookPath(rawToken, cwd: cwd) {
-                return (rawToken, resolvedPath)
+            if let reference = resolveQuicklookFileReference(rawToken, cwd: cwd) {
+                return (rawToken, reference.path, reference.lineNumber)
             }
         }
         return nil
@@ -100,9 +131,27 @@ public struct TerminalPathResolver: Sendable {
     ///   - cwd: The surface's working directory.
     /// - Returns: The first existing standardized path, or `nil`.
     public func resolveOpenURLFilePath(_ rawText: String, cwd: String?) -> String? {
+        resolveOpenURLFileReference(rawText, cwd: cwd)?.path
+    }
+
+    /// Resolves an open-URL payload to an existing file reference.
+    ///
+    /// - Parameters:
+    ///   - rawText: The raw open-URL text from the runtime.
+    ///   - cwd: The surface's working directory.
+    /// - Returns: The existing path and optional line number, or `nil`.
+    public func resolveOpenURLFileReference(
+        _ rawText: String,
+        cwd: String?
+    ) -> (path: String, lineNumber: Int?)? {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         guard URL(string: trimmed)?.scheme == nil else { return nil }
-        return resolveQuicklookPath(trimmed, cwd: cwd)
+        if let reference = resolveQuicklookFileReference(trimmed, cwd: cwd) {
+            return reference
+        }
+
+        guard trimmed.hasPrefix("a/") || trimmed.hasPrefix("b/") else { return nil }
+        return resolveQuicklookFileReference(String(trimmed.dropFirst(2)), cwd: cwd)
     }
 }

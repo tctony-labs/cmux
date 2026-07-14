@@ -28,6 +28,8 @@ public struct PreferredEditorService: FileOpening {
     private let editor: any PreferredEditorReading
     private let capture: any TestCaptureWriting
     private let systemOpener: any SystemFileOpening
+    private let emacsClientExecutableURL: URL
+    private let emacsClientArgumentsPrefix: [String]
 
     /// Creates a service with explicit collaborators (tests pass fakes).
     ///
@@ -36,24 +38,47 @@ public struct PreferredEditorService: FileOpening {
     ///   - capture: UI-test capture seam consulted before any real open.
     ///   - systemOpener: Fallback opener for the no-command and
     ///     failed-command paths.
+    ///   - emacsClientExecutableURL: Executable used for line-aware Emacs opens.
+    ///   - emacsClientArgumentsPrefix: Arguments placed before `--eval`.
     public init(
         editor: any PreferredEditorReading,
         capture: any TestCaptureWriting,
-        systemOpener: any SystemFileOpening
+        systemOpener: any SystemFileOpening,
+        emacsClientExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/env"),
+        emacsClientArgumentsPrefix: [String] = ["emacsclient"]
     ) {
         self.editor = editor
         self.capture = capture
         self.systemOpener = systemOpener
+        self.emacsClientExecutableURL = emacsClientExecutableURL
+        self.emacsClientArgumentsPrefix = emacsClientArgumentsPrefix
     }
 
     /// Creates the production service: editor command from `defaults`,
     /// capture from the process environment, fallback through `NSWorkspace`.
     public init(defaults: UserDefaults) {
+        let emacsClientLaunch = Self.emacsClientLaunch()
         self.init(
             editor: PreferredEditorSettingsStore(defaults: defaults),
             capture: UITestCaptureSink(),
-            systemOpener: NSWorkspaceFileOpener()
+            systemOpener: NSWorkspaceFileOpener(),
+            emacsClientExecutableURL: emacsClientLaunch.executableURL,
+            emacsClientArgumentsPrefix: emacsClientLaunch.argumentsPrefix
         )
+    }
+
+    static func emacsClientLaunch(
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> (executableURL: URL, argumentsPrefix: [String]) {
+        let candidates = [
+            "/opt/homebrew/bin/emacsclient",
+            "/usr/local/bin/emacsclient",
+            "/usr/bin/emacsclient",
+        ]
+        if let executable = candidates.first(where: isExecutable) {
+            return (URL(fileURLWithPath: executable), [])
+        }
+        return (URL(fileURLWithPath: "/usr/bin/env"), ["emacsclient"])
     }
 
     public func open(_ url: URL) {
@@ -79,6 +104,43 @@ public struct PreferredEditorService: FileOpening {
         process.terminationHandler = { @Sendable process in
             // Fall back when the command fails (e.g. command not found exits
             // 127 but /bin/sh itself launched fine).
+            guard process.terminationStatus != 0 else { return }
+            Task { @MainActor in
+                systemOpener.openWithSystemDefault(url)
+            }
+        }
+
+        do {
+            try process.run()
+        } catch {
+            systemOpener.openWithSystemDefault(url)
+        }
+    }
+
+    /// Opens a file at a source line through the user's Emacs client.
+    ///
+    /// - Parameters:
+    ///   - url: The file to visit.
+    ///   - lineNumber: The one-based source line to reveal.
+    public func openInEmacs(_ url: URL, lineNumber: Int) {
+        if capture.appendLineIfConfigured(
+            envKey: "CMUX_UI_TEST_CAPTURE_OPEN_PATH",
+            line: url.path
+        ) {
+            return
+        }
+
+        let escapedPath = url.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let expression = "(tctony/persp-view-file-line-external \"\(escapedPath)\" \(lineNumber))"
+        let process = Process()
+        process.executableURL = emacsClientExecutableURL
+        process.arguments = emacsClientArgumentsPrefix + ["--eval", expression]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        let systemOpener = self.systemOpener
+        process.terminationHandler = { @Sendable process in
             guard process.terminationStatus != 0 else { return }
             Task { @MainActor in
                 systemOpener.openWithSystemDefault(url)

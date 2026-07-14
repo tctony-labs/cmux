@@ -51,6 +51,23 @@ private func existsIn(_ existingPaths: Set<String>) -> @Sendable (String) -> Boo
 }
 
 @Suite struct TerminalQuicklookPathResolutionTests {
+    @Test(arguments: [
+        ("Sources/App.swift:23", 23),
+        ("Sources/App.swift:25-29", 25),
+    ])
+    func resolvesFileLineReferences(rawToken: String, expectedLine: Int) throws {
+        let existingFile = "/Users/dev/project/Sources/App.swift"
+        let reference = try #require(
+            TerminalPathResolver(fileExists: existsIn([existingFile])).resolveQuicklookFileReference(
+                rawToken,
+                cwd: "/Users/dev/project"
+            )
+        )
+
+        #expect(reference.path == existingFile)
+        #expect(reference.lineNumber == expectedLine)
+    }
+
     @Test func fallsBackToStrippedPathWhenLiteralPathIsMissing() {
         let strippedPath = "/tmp/cmux-cmdclick-path.md"
         #expect(
@@ -145,6 +162,45 @@ private func existsIn(_ existingPaths: Set<String>) -> @Sendable (String) -> Boo
 }
 
 @Suite struct TerminalOpenURLFilePathTests {
+    @Test func resolvesFileLineReference() throws {
+        let existingFile = "/Users/dev/project/Sources/App.swift"
+        let reference = try #require(
+            TerminalPathResolver(fileExists: existsIn([existingFile])).resolveOpenURLFileReference(
+                "Sources/App.swift:25-29",
+                cwd: "/Users/dev/project"
+            )
+        )
+
+        #expect(reference.path == existingFile)
+        #expect(reference.lineNumber == 25)
+    }
+
+    @Test(arguments: ["a/rules/tony.md", "b/rules/tony.md"])
+    func stripsGitDiffPrefixWhenLiteralOpenURLPathIsMissing(rawToken: String) throws {
+        let existingFile = "/Users/dev/project/rules/tony.md"
+        let reference = try #require(
+            TerminalPathResolver(fileExists: existsIn([existingFile])).resolveOpenURLFileReference(
+                rawToken,
+                cwd: "/Users/dev/project"
+            )
+        )
+
+        #expect(reference.path == existingFile)
+    }
+
+    @Test func prefersLiteralPathOverStrippingGitDiffPrefix() throws {
+        let literalFile = "/Users/dev/project/a/rules/tony.md"
+        let strippedFile = "/Users/dev/project/rules/tony.md"
+        let reference = try #require(
+            TerminalPathResolver(fileExists: existsIn([literalFile, strippedFile])).resolveOpenURLFileReference(
+                "a/rules/tony.md",
+                cwd: "/Users/dev/project"
+            )
+        )
+
+        #expect(reference.path == literalFile)
+    }
+
     @Test func resolvesAbsoluteMarkdownPathWithTrailingDot() {
         let existingFile = "/Users/dev/project/skills/marketing/data/lawrencecchen-tweets.md"
         #expect(
@@ -237,5 +293,23 @@ private func existsIn(_ existingPaths: Set<String>) -> @Sendable (String) -> Boo
                 cwd: "/tmp"
             ) == nil
         )
+    }
+
+    @Test(arguments: [
+        ("--- a/rules/tony.md", 8),
+        ("+++ b/rules/tony.md", 8),
+    ])
+    func stripsGitDiffHeaderPrefix(line: String, column: Int) throws {
+        let existingFile = "/Users/dev/project/rules/tony.md"
+        let resolution = try #require(
+            TerminalPathResolver(fileExists: existsIn([existingFile])).resolveVisibleLinePath(
+                line,
+                column: column,
+                cwd: "/Users/dev/project"
+            )
+        )
+
+        #expect(resolution.path == existingFile)
+        #expect(resolution.rawToken == "rules/tony.md")
     }
 }

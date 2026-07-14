@@ -3434,8 +3434,20 @@ class GhosttyApp {
                         workspace: workspace,
                         surfaceId: termSurface.id
                     )
-                    guard let resolvedPath = TerminalPathResolver().resolveOpenURLFilePath(trimmedUrlString, cwd: cwd) else {
+                    guard let reference = TerminalPathResolver().resolveOpenURLFileReference(
+                        trimmedUrlString,
+                        cwd: cwd
+                    ) else {
                         return (false, nil)
+                    }
+                    surfaceView.noteCommandClickOpenURLHandled()
+                    let resolvedPath = reference.path
+                    if let lineNumber = reference.lineNumber {
+                        PreferredEditorService(defaults: .standard).openInEmacs(
+                            URL(fileURLWithPath: resolvedPath),
+                            lineNumber: lineNumber
+                        )
+                        return (true, resolvedPath)
                     }
                     guard CommandClickFileOpenRouter.shouldRouteInCmux(path: resolvedPath) else {
                         return (false, resolvedPath)
@@ -3779,17 +3791,20 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     private struct WordPathResolution {
         let path: String
+        let lineNumber: Int?
         let source: WordPathResolutionSource
         let rawToken: String
     }
 
     private func makeWordPathResolution(
         path: String,
+        lineNumber: Int?,
         source: WordPathResolutionSource,
         rawToken: String
     ) -> WordPathResolution {
         WordPathResolution(
             path: path,
+            lineNumber: lineNumber,
             source: source,
             rawToken: rawToken
         )
@@ -3960,10 +3975,15 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private var lastDrawableSize: CGSize = .zero
     private var isFindEscapeSuppressionArmed = false
     private var hasPendingLeftMouseRelease = false
+    private var didHandleCommandClickOpenURL = false
 #if DEBUG
     private var lastSizeSkipSignature: String?
 #endif
     private static let maxDeferredSurfaceSizeNonMetalRetryCount = 8
+
+    fileprivate func noteCommandClickOpenURLHandled() {
+        didHandleCommandClickOpenURL = true
+    }
 
     private var hasUsableFocusGeometry: Bool { bounds.width > 1 && bounds.height > 1 }
 
@@ -6426,6 +6446,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         if event.clickCount == 1 {
             ghostty_surface_mouse_pos(surface, eventPoint.x, bounds.height - eventPoint.y, mouseModsFromEvent(event))
         }
+        didHandleCommandClickOpenURL = false
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mouseModsFromEvent(event))
         hasPendingLeftMouseRelease = true
     }
@@ -6453,7 +6474,11 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         guard let surface else { return false }
         let point = convert(event.locationInWindow, from: nil)
         let consumed = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mouseModsFromEvent(event))
-        _ = handleCommandClickRelease(at: point, modifierFlags: event.modifierFlags, ghosttyConsumed: consumed)
+        _ = routeCommandClickRelease(
+            at: point,
+            modifierFlags: event.modifierFlags,
+            ghosttyConsumed: consumed
+        )
         return true
     }
 
@@ -6508,9 +6533,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 #else
                     let resolvedQuicklookWord = decodedWord
 #endif
-                    if let resolvedPath = TerminalPathResolver().resolveQuicklookPath(resolvedQuicklookWord, cwd: cwd) {
+                    if let reference = TerminalPathResolver().resolveQuicklookFileReference(
+                        resolvedQuicklookWord,
+                        cwd: cwd
+                    ) {
                         quicklookResolution = makeWordPathResolution(
-                            path: resolvedPath,
+                            path: reference.path,
+                            lineNumber: reference.lineNumber,
                             source: .quicklook,
                             rawToken: resolvedQuicklookWord
                         )
@@ -6717,6 +6746,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
         return makeWordPathResolution(
             path: resolution.path,
+            lineNumber: resolution.lineNumber,
             source: .snapshot,
             rawToken: resolution.rawToken
         )
@@ -6765,6 +6795,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
         return makeWordPathResolution(
             path: resolution.path,
+            lineNumber: resolution.lineNumber,
             source: .snapshot,
             rawToken: resolution.rawToken
         )
@@ -6833,7 +6864,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 #endif
             return nil
         }
-        guard !ghosttyConsumed || resolution.source == .snapshot else {
+        guard !ghosttyConsumed || resolution.source == .snapshot || resolution.lineNumber != nil else {
 #if DEBUG
             var payload: [String: Any] = [
                 "flags": debugModifierString(modifierFlags),
@@ -6891,6 +6922,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         // shift modifier for the gesture.
         let bypassCmuxPreview = modifierFlags.contains(.shift)
 
+        if let lineNumber = resolution.lineNumber {
+            PreferredEditorService(defaults: .standard).openInEmacs(
+                URL(fileURLWithPath: resolution.path),
+                lineNumber: lineNumber
+            )
+            return resolution
+        }
+
         // Remote-surface guard runs before shouldRoute so we never stat a local
         // path on the main thread for a remote workspace. When the cmux route
         // is applicable but split creation fails, fall back to the preferred
@@ -6909,6 +6948,27 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
         PreferredEditorService(defaults: .standard).open(URL(fileURLWithPath: resolution.path))
         return resolution
+    }
+
+    private func routeCommandClickRelease(
+        at point: NSPoint,
+        modifierFlags: NSEvent.ModifierFlags,
+        ghosttyConsumed: Bool
+    ) -> (resolution: WordPathResolution?, openURLHandled: Bool) {
+        let openURLHandled = didHandleCommandClickOpenURL
+        didHandleCommandClickOpenURL = false
+        if openURLHandled {
+            return (resolveWordUnderCursorPath(at: point), true)
+        }
+
+        return (
+            handleCommandClickRelease(
+                at: point,
+                modifierFlags: modifierFlags,
+                ghosttyConsumed: ghosttyConsumed
+            ),
+            false
+        )
     }
 
     private func clampedDebugPoint(_ point: NSPoint) -> NSPoint {
@@ -7021,9 +7081,10 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
         window?.makeFirstResponder(self)
         ghostty_surface_mouse_pos(surface, clampedPoint.x, bounds.height - clampedPoint.y, mods)
+        didHandleCommandClickOpenURL = false
         let pressHandled = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
         let releaseConsumed = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
-        let resolution = handleCommandClickRelease(
+        let routed = routeCommandClickRelease(
             at: clampedPoint,
             modifierFlags: flags,
             ghosttyConsumed: releaseConsumed
@@ -7032,8 +7093,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         var payload: [String: Any] = [
             "pressHandled": pressHandled ? "1" : "0",
             "releaseConsumed": releaseConsumed ? "1" : "0",
+            "openURLHandled": routed.openURLHandled ? "1" : "0",
         ]
-        if let resolution {
+        if let resolution = routed.resolution {
             payload["openedPath"] = resolution.path
             payload["resolutionSource"] = resolution.source.rawValue
             payload["rawToken"] = resolution.rawToken
