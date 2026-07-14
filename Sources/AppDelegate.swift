@@ -928,6 +928,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var shouldDeferInitialMainWindowBootstrapForExternalConfirmation = false
     private var didBootstrapInitialMainWindow = false
     private var isTerminatingApp = false
+    private var didPersistFinalTerminationSnapshot = false
     private var closedWindowHistorySuppressedWindowIds: Set<UUID> = []
 #if DEBUG
     var closeMainWindowContainingTabIdObserverForTesting: ((UUID, Bool) -> Void)?
@@ -1660,8 +1661,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ]
         )
         isTerminatingApp = true
-        _ = saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
-        ClosedItemHistoryStore.shared.flushPendingSaves()
+        TerminalWindowPortalRegistry.beginApplicationTermination()
+        persistFinalTerminationSnapshotIfNeeded()
 
         // If the user already confirmed via the Cmd+Q shortcut warning dialog,
         // or policy skips the warning, avoid a second alert.
@@ -1708,6 +1709,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else {
                 // Reset so that the next quit attempt can show the dialog again.
                 self.isTerminatingApp = false
+                self.didPersistFinalTerminationSnapshot = false
+                TerminalWindowPortalRegistry.cancelApplicationTermination()
                 StartupBreadcrumbLog.append("appDelegate.shouldTerminate.reply", fields: ["shouldQuit": "0"])
             }
             NSApp.reply(toApplicationShouldTerminate: shouldQuit)
@@ -1752,12 +1755,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationWillTerminate(_ notification: Notification) {
         StartupBreadcrumbLog.append("appDelegate.willTerminate.begin")
         isTerminatingApp = true
+        TerminalWindowPortalRegistry.beginApplicationTermination()
         // Best-effort presence goodbye; unclean exits are covered by the
         // service's missed-heartbeat timeout.
         PresenceHeartbeatClient.shared.appWillTerminate()
         closeAllWebInspectorsBeforeAppTeardown()
-        _ = saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
-        ClosedItemHistoryStore.shared.flushPendingSaves()
+        persistFinalTerminationSnapshotIfNeeded()
         stopSessionAutosaveTimer()
         CloudVMActionLauncher.shared.terminateAll()
         CmuxSSHURLProcessLauncher.shared.terminateAll()
@@ -1787,8 +1790,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func persistSessionForUpdateRelaunch() {
         isTerminatingApp = true
-        _ = saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
-        ClosedItemHistoryStore.shared.flushPendingSaves()
+        TerminalWindowPortalRegistry.beginApplicationTermination()
+        persistFinalTerminationSnapshotIfNeeded()
     }
 
     func configure(
@@ -3571,8 +3574,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.isTerminatingApp = true
-                _ = self.saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
-                ClosedItemHistoryStore.shared.flushPendingSaves()
+                TerminalWindowPortalRegistry.beginApplicationTermination()
+                self.persistFinalTerminationSnapshotIfNeeded()
             }
         }
         lifecycleSnapshotObservers.append(powerOffObserver)
@@ -3585,8 +3588,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if self.isTerminatingApp {
-                    _ = self.saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
-                    ClosedItemHistoryStore.shared.flushPendingSaves()
+                    self.persistFinalTerminationSnapshotIfNeeded()
                 } else {
                     self.saveSessionSnapshotAfterLoadingProcessDetectedIndexes(includeScrollback: false)
                 }
@@ -4000,18 +4002,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
     }
 
-    @discardableResult
-    private func saveSessionSnapshotIncludingProcessDetectedIndexes(
-        includeScrollback: Bool,
-        removeWhenEmpty: Bool = false
-    ) -> Bool {
-        let resumeIndexes = ProcessDetectedResumeIndexes.loadSynchronously()
-        return saveSessionSnapshot(
-            includeScrollback: includeScrollback,
-            removeWhenEmpty: removeWhenEmpty,
-            restorableAgentIndex: resumeIndexes.restorableAgentIndex,
-            surfaceResumeBindingIndex: resumeIndexes.surfaceResumeBindingIndex
+    private func persistFinalTerminationSnapshotIfNeeded() {
+        guard Self.shouldPersistFinalTerminationSnapshot(
+            didPersistFinalTerminationSnapshot: didPersistFinalTerminationSnapshot
+        ) else { return }
+        didPersistFinalTerminationSnapshot = true
+        // Final termination snapshots intentionally omit process-detected agent and
+        // resume metadata. Layout, panel state, drafts, and scrollback are unchanged.
+        _ = saveSessionSnapshot(
+            includeScrollback: true,
+            removeWhenEmpty: false,
+            restorableAgentIndex: .empty,
+            surfaceResumeBindingIndex: .empty
         )
+        ClosedItemHistoryStore.shared.flushPendingSaves()
+    }
+
+    nonisolated static func shouldPersistFinalTerminationSnapshot(
+        didPersistFinalTerminationSnapshot: Bool
+    ) -> Bool {
+        !didPersistFinalTerminationSnapshot
     }
 
     private func saveSessionSnapshotAfterLoadingProcessDetectedIndexes(

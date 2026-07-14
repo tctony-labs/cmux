@@ -984,6 +984,51 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
     }
 }
 
+@Test @MainActor
+func terminalPortalDoesNotRebindAfterWindowWillClose() {
+    let baseline = TerminalWindowPortalRegistry.debugPortalCount()
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+        styleMask: [.titled, .closable],
+        backing: .buffered,
+        defer: false
+    )
+    defer { window.orderOut(nil) }
+
+    let anchor = NSView(frame: NSRect(x: 20, y: 20, width: 200, height: 120))
+    window.contentView?.addSubview(anchor)
+    let surface = TerminalSurface(
+        tabId: UUID(),
+        context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+        configTemplate: nil,
+        workingDirectory: nil
+    )
+    let hosted = surface.hostedView
+
+    TerminalWindowPortalRegistry.bind(
+        hostedView: hosted,
+        to: anchor,
+        visibleInUI: true,
+        expectedSurfaceId: surface.id,
+        expectedGeneration: surface.portalBindingGeneration()
+    )
+    #expect(TerminalWindowPortalRegistry.debugPortalCount() == baseline + 1)
+
+    NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+    #expect(TerminalWindowPortalRegistry.debugPortalCount() == baseline)
+    #expect(hosted.superview == nil)
+
+    TerminalWindowPortalRegistry.bind(
+        hostedView: hosted,
+        to: anchor,
+        visibleInUI: true,
+        expectedSurfaceId: surface.id,
+        expectedGeneration: surface.portalBindingGeneration()
+    )
+    #expect(TerminalWindowPortalRegistry.debugPortalCount() == baseline)
+    #expect(hosted.superview == nil)
+}
+
 @MainActor
 final class TerminalOffscreenStartupTests: XCTestCase {
 #if DEBUG

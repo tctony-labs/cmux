@@ -7,6 +7,7 @@ import Bonsplit
 
 private var cmuxWindowTerminalPortalKey: UInt8 = 0
 private var cmuxWindowTerminalPortalCloseObserverKey: UInt8 = 0
+private var cmuxWindowTerminalPortalClosingKey: UInt8 = 0
 
 final class WindowTerminalHostView: NSView {
     private struct DividerRegion {
@@ -1828,6 +1829,7 @@ enum TerminalWindowPortalRegistry {
     private static var interactiveGeometryResizeCount = 0
     private static var activeSplitDividerDragWindowId: ObjectIdentifier?
     private static var activeSplitDividerDragEventNumber: Int?
+    private static var isApplicationTerminating = false
 #if DEBUG
     private static var blockedBindCount: Int = 0
     private static var blockedBindReasons: [String: Int] = [:]
@@ -1945,6 +1947,12 @@ enum TerminalWindowPortalRegistry {
         ) { [weak window] _ in
             MainActor.assumeIsolated {
                 if let window {
+                    objc_setAssociatedObject(
+                        window,
+                        &cmuxWindowTerminalPortalClosingKey,
+                        true,
+                        .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+                    )
                     removePortal(for: window)
                 } else {
                     removePortal(windowId: windowId, window: nil)
@@ -1983,6 +1991,19 @@ enum TerminalWindowPortalRegistry {
         }
     }
 
+    private static func canBind(to window: NSWindow) -> Bool {
+        guard !isApplicationTerminating else { return false }
+        return (objc_getAssociatedObject(window, &cmuxWindowTerminalPortalClosingKey) as? Bool) != true
+    }
+
+    static func beginApplicationTermination() {
+        isApplicationTerminating = true
+    }
+
+    static func cancelApplicationTermination() {
+        isApplicationTerminating = false
+    }
+
     private static func portal(for window: NSWindow, syncLayout: Bool = true) -> WindowTerminalPortal {
         if let existing = objc_getAssociatedObject(window, &cmuxWindowTerminalPortalKey) as? WindowTerminalPortal {
             portalsByWindowId[ObjectIdentifier(window)] = existing
@@ -2016,6 +2037,7 @@ enum TerminalWindowPortalRegistry {
         deferLayoutSynchronization: Bool = false
     ) {
         guard let window = anchorView.window else { return }
+        guard canBind(to: window) else { return }
 
         let windowId = ObjectIdentifier(window)
         let hostedId = ObjectIdentifier(hostedView)
@@ -2067,6 +2089,7 @@ enum TerminalWindowPortalRegistry {
 
     static func synchronizeForAnchor(_ anchorView: NSView, syncLayout: Bool = true) {
         guard let window = anchorView.window else { return }
+        guard canBind(to: window) else { return }
         let portal = portal(for: window, syncLayout: syncLayout)
         portal.synchronizeHostedViewForAnchor(anchorView, syncLayout: syncLayout)
     }

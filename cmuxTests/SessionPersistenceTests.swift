@@ -3,6 +3,7 @@ import CmuxCore
 import CmuxFoundation
 import CmuxSession
 import Darwin
+import Testing
 import XCTest
 import CmuxTerminal
 
@@ -1872,6 +1873,16 @@ final class SessionPersistenceTests: XCTestCase {
         let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         return try XCTUnwrap(attributes[.systemFileNumber] as? Int)
     }
+}
+
+@Test
+func finalTerminationSnapshotIsPersistedOnlyOnce() {
+    #expect(AppDelegate.shouldPersistFinalTerminationSnapshot(
+        didPersistFinalTerminationSnapshot: false
+    ))
+    #expect(!AppDelegate.shouldPersistFinalTerminationSnapshot(
+        didPersistFinalTerminationSnapshot: true
+    ))
 }
 
 final class SocketListenerAcceptPolicyTests: XCTestCase {
