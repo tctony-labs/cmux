@@ -164,6 +164,37 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         return pathForDirectory(url, rootDir: rootDir, usePathPrefix: !atImplicitRoot)
     }
 
+    /// Computes the query path produced when Tab completes a Quick Open candidate.
+    ///
+    /// Directory completion preserves the existing path-mode behavior. File
+    /// completion keeps the directory prefix already typed by the user, or
+    /// uses the candidate's workspace-relative path for a fuzzy search.
+    ///
+    /// - Parameters:
+    ///   - url: The candidate URL.
+    ///   - rootDir: The active workspace root directory.
+    ///   - currentMatchingTerm: The Quick Open query with its `@` prefix removed.
+    ///   - isDirectory: Whether the candidate is a directory.
+    /// - Returns: The path portion to place after the Quick Open prefix.
+    public static func candidateSelectionPath(
+        for url: URL,
+        rootDir: String,
+        currentMatchingTerm: String,
+        isDirectory: Bool
+    ) -> String {
+        if isDirectory {
+            return directorySelectionPath(
+                for: url,
+                rootDir: rootDir,
+                currentMatchingTerm: currentMatchingTerm
+            )
+        }
+        if let slashIndex = currentMatchingTerm.lastIndex(of: "/") {
+            return String(currentMatchingTerm[...slashIndex]) + url.lastPathComponent
+        }
+        return displayPath(url: url, rootDir: rootDir) ?? url.path
+    }
+
     /// Classifies how Quick Open should open a file URL.
     public static func openAction(for url: URL) -> CommandPaletteQuickOpenFileOpenAction {
         let resolvedURL = url.resolvingSymlinksInPath()

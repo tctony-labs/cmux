@@ -65,6 +65,20 @@ extension ContentView {
         )
     }
 
+    static func commandPaletteFileSearchCandidateSelectionPath(
+        _ url: URL,
+        rootDir: String,
+        currentMatchingTerm: String,
+        isDirectory: Bool
+    ) -> String {
+        CommandPaletteQuickOpenFileSearch.candidateSelectionPath(
+            for: url,
+            rootDir: rootDir,
+            currentMatchingTerm: currentMatchingTerm,
+            isDirectory: isDirectory
+        )
+    }
+
     /// Open a file for viewing/editing, avoiding accidental execution of scripts
     /// or binaries in a terminal.
     static func openFileInDefaultEditor(_ url: URL) {

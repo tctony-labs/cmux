@@ -3729,6 +3729,7 @@ struct ContentView: View {
                     text: $commandPaletteQuery,
                     isFocused: Binding(get: { isCommandPaletteSearchFocused }, set: { isCommandPaletteSearchFocused = $0 }),
                     onSubmit: runSelectedCommandPaletteResult,
+                    onCompleteSelection: completeSelectedCommandPaletteResult,
                     onEscape: { dismissCommandPalette() },
                     onMoveSelection: moveCommandPaletteSelection(by:),
                     onUnhandledNavigationKey: forwardCommandPaletteUnhandledNavigationKeyToFocusedTerminal
@@ -4053,6 +4054,7 @@ struct ContentView: View {
         @Binding var text: String
         @Binding var isFocused: Bool
         let onSubmit: () -> Void
+        let onCompleteSelection: () -> Bool
         let onEscape: () -> Void
         let onMoveSelection: (Int) -> Void
         let onUnhandledNavigationKey: (NSEvent) -> Bool
@@ -4105,6 +4107,9 @@ struct ContentView: View {
                     guard !textView.hasMarkedText() else { return false }
                     parent.onSubmit()
                     return true
+                case #selector(NSResponder.insertTab(_:)):
+                    guard !textView.hasMarkedText() else { return false }
+                    return parent.onCompleteSelection()
                 case #selector(NSResponder.cancelOperation(_:)):
                     guard !textView.hasMarkedText() else { return false }
                     parent.onEscape()
@@ -4135,6 +4140,14 @@ struct ContentView: View {
                 ) {
                     parent.onSubmit()
                     return true
+                }
+
+                if event.keyCode == 48,
+                   event.modifierFlags
+                    .intersection(.deviceIndependentFlagsMask)
+                    .subtracting([.numericPad, .function, .capsLock])
+                    .isEmpty {
+                    return parent.onCompleteSelection()
                 }
 
                 if event.keyCode == 53,
@@ -5364,6 +5377,13 @@ struct ContentView: View {
                             && matchCandidate.lowercased() == sq.trimmingCharacters(in: .whitespacesAndNewlines)
                                 .lowercased()
                         let title = isSelectedDirectory ? "." : rp
+                        let completionPath = isDir
+                            ? Self.commandPaletteFileSearchPathForDirectory(
+                                item.url,
+                                rootDir: rootDir,
+                                usePathPrefix: false
+                            )
+                            : rp
                         titleIndicesByIndex[i] = isSelectedDirectory
                             ? []
                             : Self.fileSearchCrossDirectoryFuzzyMatch(query: sq, candidate: matchCandidate)?.indices
@@ -5389,6 +5409,7 @@ struct ContentView: View {
                                     Self.openFileInDefaultEditor(item.url)
                                 }
                             },
+                            completionText: Self.commandPaletteFileSearchPrefix + completionPath,
                             alternateAction: isDir
                                 ? {
                                     self.tabManager.addWorkspaceForQuickOpenDirectory(item.url)
@@ -5621,7 +5642,11 @@ struct ContentView: View {
 
         var entries: [CommandPaletteCommand] = []
         if resolvedDir != rootDir {
-            entries.append(commandPaletteFileSearchDotEntry(currentDir: resolvedDir))
+            entries.append(commandPaletteFileSearchDotEntry(
+                currentDir: resolvedDir,
+                rootDir: rootDir,
+                currentMatchingTerm: matchingQuery
+            ))
         }
         let nucleoTerm = Self.commandPaletteFileSearchMatchingTerm(
             matchingQuery,
@@ -5632,6 +5657,12 @@ struct ContentView: View {
         for url in fileURLs {
             let isDir = Self.isDirectory(url)
             let name = url.lastPathComponent
+            let completionPath = Self.commandPaletteFileSearchCandidateSelectionPath(
+                url,
+                rootDir: rootDir,
+                currentMatchingTerm: matchingQuery,
+                isDirectory: isDir
+            )
             entries.append(CommandPaletteCommand(
                 id: "file.quickopen.\(url.absoluteString.hashValue)",
                 rank: isDir ? 0 : 1,
@@ -5657,6 +5688,7 @@ struct ContentView: View {
                         Self.openFileInDefaultEditor(url)
                     }
                 },
+                completionText: Self.commandPaletteFileSearchPrefix + completionPath,
                 alternateAction: isDir
                     ? {
                         self.tabManager.addWorkspaceForQuickOpenDirectory(url)
@@ -5693,8 +5725,18 @@ struct ContentView: View {
             .nilIfEmpty
     }
 
-    private func commandPaletteFileSearchDotEntry(currentDir: String) -> CommandPaletteCommand {
+    private func commandPaletteFileSearchDotEntry(
+        currentDir: String,
+        rootDir: String,
+        currentMatchingTerm: String
+    ) -> CommandPaletteCommand {
         let url = URL(fileURLWithPath: currentDir, isDirectory: true)
+        let completionPath = Self.commandPaletteFileSearchCandidateSelectionPath(
+            url,
+            rootDir: rootDir,
+            currentMatchingTerm: currentMatchingTerm,
+            isDirectory: true
+        )
         return CommandPaletteCommand(
             id: "file.quickopen.dot.\(currentDir.hashValue)",
             rank: -1,
@@ -5707,6 +5749,7 @@ struct ContentView: View {
             action: {
                 NSWorkspace.shared.open(url)
             },
+            completionText: Self.commandPaletteFileSearchPrefix + completionPath,
             alternateAction: {
                 self.tabManager.addWorkspaceForQuickOpenDirectory(url)
                 return true
@@ -8975,6 +9018,29 @@ struct ContentView: View {
         }
 
         runCommandPaletteResolvedActivation(.selected(index: commandPaletteSelectedResultIndex))
+    }
+
+    private func completeSelectedCommandPaletteResult() -> Bool {
+        guard case .commands = commandPaletteMode else { return false }
+        let results: [CommandPaletteSearchResult]
+        if commandPaletteHasCurrentResolvedResults {
+            results = cachedCommandPaletteResults
+        } else if commandPaletteVisibleResultsScope == commandPaletteListScope {
+            results = commandPaletteVisibleResults
+        } else {
+            return false
+        }
+        guard !results.isEmpty else { return false }
+        let resolvedIndex = Self.commandPaletteResolvedSelectionIndex(
+            preferredCommandID: commandPaletteSelectionAnchorCommandID,
+            fallbackSelectedIndex: commandPaletteSelectedResultIndex,
+            resultIDs: results.map(\.id)
+        )
+        guard let completedQuery = results[resolvedIndex].command.completionQuery(for: commandPaletteListScope) else {
+            return false
+        }
+        commandPaletteQuery = completedQuery
+        return true
     }
 
     /// Cmd+Enter on the selected result. Runs the command's alternate action
