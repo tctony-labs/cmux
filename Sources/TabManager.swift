@@ -1015,6 +1015,15 @@ class TabManager: ObservableObject {
 #endif
 
     @discardableResult
+    func addWorkspaceForQuickOpenDirectory(_ directoryURL: URL) -> Workspace {
+        addWorkspace(
+            title: directoryURL.lastPathComponent,
+            workingDirectory: directoryURL.path,
+            inheritWorkingDirectory: false
+        )
+    }
+
+    @discardableResult
     func addWorkspace(
         title: String? = nil,
         workingDirectory overrideWorkingDirectory: String? = nil,

@@ -5389,8 +5389,11 @@ struct ContentView: View {
                                     Self.openFileInDefaultEditor(item.url)
                                 }
                             },
-                            alternateAction: (isDir || isSelectedDirectory)
-                                ? nil
+                            alternateAction: isDir
+                                ? {
+                                    self.tabManager.addWorkspaceForQuickOpenDirectory(item.url)
+                                    return true
+                                }
                                 : {
                                     Self.openFileInDefaultEditor(item.url)
                                     return true
@@ -5618,7 +5621,7 @@ struct ContentView: View {
 
         var entries: [CommandPaletteCommand] = []
         if resolvedDir != rootDir {
-            entries.append(Self.commandPaletteFileSearchDotEntry(currentDir: resolvedDir))
+            entries.append(commandPaletteFileSearchDotEntry(currentDir: resolvedDir))
         }
         let nucleoTerm = Self.commandPaletteFileSearchMatchingTerm(
             matchingQuery,
@@ -5654,10 +5657,15 @@ struct ContentView: View {
                         Self.openFileInDefaultEditor(url)
                     }
                 },
-                alternateAction: isDir ? nil : {
-                    Self.openFileInDefaultEditor(url)
-                    return true
-                }
+                alternateAction: isDir
+                    ? {
+                        self.tabManager.addWorkspaceForQuickOpenDirectory(url)
+                        return true
+                    }
+                    : {
+                        Self.openFileInDefaultEditor(url)
+                        return true
+                    }
             ))
         }
         return entries
@@ -5685,7 +5693,7 @@ struct ContentView: View {
             .nilIfEmpty
     }
 
-    private static func commandPaletteFileSearchDotEntry(currentDir: String) -> CommandPaletteCommand {
+    private func commandPaletteFileSearchDotEntry(currentDir: String) -> CommandPaletteCommand {
         let url = URL(fileURLWithPath: currentDir, isDirectory: true)
         return CommandPaletteCommand(
             id: "file.quickopen.dot.\(currentDir.hashValue)",
@@ -5698,6 +5706,10 @@ struct ContentView: View {
             dismissOnRun: true,
             action: {
                 NSWorkspace.shared.open(url)
+            },
+            alternateAction: {
+                self.tabManager.addWorkspaceForQuickOpenDirectory(url)
+                return true
             }
         )
     }

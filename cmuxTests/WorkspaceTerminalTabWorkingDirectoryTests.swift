@@ -11,6 +11,22 @@ import Testing
 @Suite("Workspace terminal tab working directory")
 struct WorkspaceTerminalTabWorkingDirectoryTests {
     @MainActor
+    @Test("Quick Open directory creates a named workspace with a terminal in that directory")
+    func quickOpenDirectoryCreatesNamedTerminalWorkspace() throws {
+        let manager = TabManager()
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quick-open-project", isDirectory: true)
+
+        let workspace = manager.addWorkspaceForQuickOpenDirectory(directoryURL)
+
+        #expect(manager.selectedWorkspace === workspace)
+        #expect(workspace.title == "quick-open-project")
+        #expect(workspace.currentDirectory == directoryURL.path)
+        let terminalPanel = try #require(workspace.focusedTerminalPanel)
+        #expect(terminalPanel.requestedWorkingDirectory == directoryURL.path)
+    }
+
+    @MainActor
     @Test("Cmd+T after session restore uses workspace cwd when focused agent has no terminal cwd")
     func cmdTAfterSessionRestoreUsesWorkspaceCurrentDirectoryForAgentPane() throws {
         let workspaceDirectory = "/tmp/cmux-cmdt-restore-\(UUID().uuidString)"
