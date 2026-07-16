@@ -585,6 +585,58 @@ final class MarkdownPanelTests: XCTestCase {
         XCTAssertEqual(after["top"] ?? .greatestFiniteMagnitude, before["top"] ?? 0, accuracy: 6)
     }
 
+    func testMarkdownTableOfContentsAnchorScrollsToHeading() async throws {
+        let frame = NSRect(x: 0, y: 0, width: 720, height: 360)
+        let webView = WKWebView(frame: frame, configuration: WKWebViewConfiguration())
+        let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = webView
+        defer {
+            webView.navigationDelegate = nil
+            window.close()
+        }
+
+        let loaded = expectation(description: "markdown shell loaded")
+        let loadDelegate = MarkdownShellLoadDelegate(expectation: loaded)
+        webView.navigationDelegate = loadDelegate
+        webView.loadHTMLString(
+            MarkdownViewerAssets.shared.shellHTML(isDark: true),
+            baseURL: FileManager.default.temporaryDirectory.appendingPathComponent("toc.md")
+        )
+        await fulfillment(of: [loaded], timeout: 5)
+        if let error = loadDelegate.error {
+            throw error
+        }
+
+        let filler = Array(repeating: "Paragraph with enough content to require scrolling.\n", count: 80)
+            .joined(separator: "\n")
+        try await renderMarkdown(
+            "[跳转到详细信息](#详细信息)\n\n\(filler)\n## 详细信息\n\nTarget section.\n\n\(filler)",
+            in: webView
+        )
+
+        let result = try await webView.evaluateJavaScript(
+            """
+            (function() {
+              document.documentElement.style.scrollBehavior = 'auto';
+              window.scrollTo(0, 0);
+              var link = document.querySelector('a[href]');
+              var heading = document.getElementById('详细信息');
+              var event = new MouseEvent('click', { bubbles: true, cancelable: true });
+              var dispatched = link.dispatchEvent(event);
+              return {
+                prevented: !dispatched,
+                headingTop: heading.getBoundingClientRect().top,
+                scrollY: window.scrollY
+              };
+            })();
+            """
+        )
+        let snapshot = try XCTUnwrap(result as? [String: Any])
+        XCTAssertEqual(snapshot["prevented"] as? Bool, true)
+        XCTAssertGreaterThan(snapshot["scrollY"] as? Double ?? 0, 0)
+        XCTAssertEqual(snapshot["headingTop"] as? Double ?? .greatestFiniteMagnitude, 0, accuracy: 2)
+    }
+
     func testMarkdownRenderHandlesLocalImageSources() async throws {
         let fileManager = FileManager.default
         let rootURL = fileManager.temporaryDirectory

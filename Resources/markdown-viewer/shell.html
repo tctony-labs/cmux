@@ -945,7 +945,7 @@ html { scroll-behavior: smooth; }
   var headingSlugCounts = Object.create(null);
   function uniqueHeadingSlug(raw) {
     var base = String(raw || '').toLowerCase()
-      .replace(/[^\w\- ]+/g, '')
+      .replace(/[^\p{L}\p{M}\p{N}\p{S}_\- ]+/gu, '')
       .replace(/\s+/g, '-')
       .replace(/^-+|-+$/g, '');
     if (!base) { base = 'heading'; }
@@ -1544,6 +1544,22 @@ html { scroll-behavior: smooth; }
     } catch (e) { /* no bridge */ }
   }
 
+  function scrollToInPageAnchor(anchor) {
+    var href = anchor && anchor.getAttribute('href');
+    if (!href || href.charAt(0) !== '#') { return false; }
+    if (href === '#') {
+      window.scrollTo(0, 0);
+      return true;
+    }
+    var fragment = href.slice(1);
+    try { fragment = decodeURIComponent(fragment); }
+    catch (e) { /* Use the literal fragment when percent-decoding fails. */ }
+    var target = document.getElementById(fragment);
+    if (!target) { return false; }
+    target.scrollIntoView({ block: 'start' });
+    return true;
+  }
+
   function markMarkdownFileLinks() {
     contentEl.querySelectorAll('code:not([data-cmux-file])').forEach(function(code) {
       if (code.closest && code.closest('pre, .cmux-source')) { return; }
@@ -1574,6 +1590,14 @@ html { scroll-behavior: smooth; }
   contentEl.addEventListener('click', function(ev) {
     if (ev.target && ev.target.closest && ev.target.closest('.cmux-remote-image-placeholder')) {
       if (ev.target.closest('button')) { return; }
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    var anchor = ev.target && ev.target.closest && ev.target.closest('a[href]');
+    if (scrollToInPageAnchor(anchor)) {
+      // `loadHTMLString(baseURL:)` makes WebKit resolve a fragment as a
+      // file URL navigation. Scroll the current DOM directly instead.
       ev.preventDefault();
       ev.stopPropagation();
       return;
