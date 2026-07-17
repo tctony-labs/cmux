@@ -4852,6 +4852,68 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         assertHostOrder("Terminal portal bind/sync should not rise above the browser portal host")
     }
 
+    func testPortalReinstallsAfterSelectedBrowserHostDetaches() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+        realizeWindowLayout(window)
+
+        let browserPortal = WindowBrowserPortal(window: window)
+        let terminalPortal = WindowTerminalPortal(window: window)
+        _ = browserPortal.webViewAtWindowPoint(NSPoint(x: 1, y: 1))
+        _ = terminalPortal.viewAtWindowPoint(NSPoint(x: 1, y: 1))
+
+        guard let contentView = window.contentView,
+              let container = contentView.superview,
+              let terminalHost = container.subviews.first(where: { $0 is WindowTerminalHostView }),
+              let browserHost = container.subviews.first(where: { $0 is WindowBrowserHostView }) else {
+            XCTFail("Expected both portal hosts in the content container")
+            return
+        }
+
+        terminalHost.removeFromSuperview()
+        var invalidatedSibling: NSView?
+        var rejectedSibling: NSView?
+        terminalPortal.invalidRelativeSubviewRejectedForTesting = { insertionContainer, sibling in
+            XCTAssertTrue(insertionContainer === container)
+            rejectedSibling = sibling
+        }
+        terminalPortal.beforeRelativeSubviewInsertionForTesting = { insertionContainer, sibling in
+            guard invalidatedSibling == nil, sibling === browserHost else { return }
+            XCTAssertTrue(insertionContainer === container)
+            invalidatedSibling = sibling
+            terminalPortal.beforeRelativeSubviewInsertionForTesting = nil
+            sibling.removeFromSuperview()
+        }
+
+        let anchor = NSView(frame: NSRect(x: 24, y: 24, width: 220, height: 150))
+        contentView.addSubview(anchor)
+        let terminal = GhosttyNSView(frame: NSRect(x: 0, y: 0, width: 220, height: 150))
+        let hosted = GhosttySurfaceScrollView(surfaceView: terminal)
+        terminalPortal.bind(hostedView: hosted, to: anchor, visibleInUI: true)
+        terminalPortal.synchronizeHostedViewForAnchor(anchor)
+
+        XCTAssertTrue(invalidatedSibling === browserHost)
+        XCTAssertTrue(rejectedSibling === browserHost)
+        XCTAssertNil(browserHost.superview)
+        XCTAssertTrue(terminalHost.superview === container)
+
+        let center = NSPoint(x: anchor.bounds.midX, y: anchor.bounds.midY)
+        let windowPoint = anchor.convert(center, to: nil)
+        XCTAssertTrue(
+            terminalPortal.terminalViewAtWindowPoint(windowPoint) === terminal,
+            "Terminal portal should finish binding after its selected browser sibling detaches"
+        )
+
+        terminalPortal.beforeRelativeSubviewInsertionForTesting = nil
+        terminalPortal.invalidRelativeSubviewRejectedForTesting = nil
+        drainMainQueue()
+    }
+
     func testRegistryPrunesPortalWhenWindowCloses() {
         let baseline = TerminalWindowPortalRegistry.debugPortalCount()
         let window = NSWindow(

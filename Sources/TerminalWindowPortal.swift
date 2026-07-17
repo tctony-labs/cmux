@@ -668,6 +668,8 @@ final class WindowTerminalPortal: NSObject {
     private var geometryObservers: [NSObjectProtocol] = []
 #if DEBUG
     private var lastLoggedBonsplitContainerSignature: String?
+    var beforeRelativeSubviewInsertionForTesting: ((NSView, NSView) -> Void)?
+    var invalidRelativeSubviewRejectedForTesting: ((NSView, NSView) -> Void)?
 #endif
 
     private struct Entry {
@@ -896,9 +898,9 @@ final class WindowTerminalPortal: NSObject {
 
             hostView.removeFromSuperview()
             if let browserHost {
-                container.addSubview(hostView, positioned: .below, relativeTo: browserHost)
+                addPortalSubview(hostView, to: container, positioned: .below, relativeTo: browserHost)
             } else {
-                container.addSubview(hostView, positioned: .above, relativeTo: reference)
+                addPortalSubview(hostView, to: container, positioned: .above, relativeTo: reference)
             }
 
             installConstraints = [
@@ -912,17 +914,17 @@ final class WindowTerminalPortal: NSObject {
             installedReferenceView = reference
         } else if let browserHost {
             if !Self.isView(browserHost, above: hostView, in: container) {
-                container.addSubview(hostView, positioned: .below, relativeTo: browserHost)
+                addPortalSubview(hostView, to: container, positioned: .below, relativeTo: browserHost)
             }
         } else if !Self.isView(hostView, above: reference, in: container) {
-            container.addSubview(hostView, positioned: .above, relativeTo: reference)
+            addPortalSubview(hostView, to: container, positioned: .above, relativeTo: reference)
         }
 
         // Keep the drag/mouse forwarding overlay above portal-hosted terminal views.
         if let overlay = objc_getAssociatedObject(window, &fileDropOverlayKey) as? NSView,
            overlay.superview === container,
            !Self.isView(overlay, above: hostView, in: container) {
-            container.addSubview(overlay, positioned: .above, relativeTo: hostView)
+            addPortalSubview(overlay, to: container, positioned: .above, relativeTo: hostView)
         }
 
         if syncLayout {
@@ -1003,6 +1005,25 @@ final class WindowTerminalPortal: NSObject {
             return false
         }
         return viewIndex > referenceIndex
+    }
+
+    private func addPortalSubview(
+        _ view: NSView,
+        to container: NSView,
+        positioned orderingMode: NSWindow.OrderingMode,
+        relativeTo sibling: NSView
+    ) {
+#if DEBUG
+        beforeRelativeSubviewInsertionForTesting?(container, sibling)
+#endif
+        if sibling.superview === container {
+            container.addSubview(view, positioned: orderingMode, relativeTo: sibling)
+        } else {
+#if DEBUG
+            invalidRelativeSubviewRejectedForTesting?(container, sibling)
+#endif
+            container.addSubview(view)
+        }
     }
 
     private func preferredBrowserHost(in container: NSView) -> WindowBrowserHostView? {
