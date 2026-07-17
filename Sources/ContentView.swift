@@ -15962,9 +15962,7 @@ enum SidebarTabDragPayload {
         let payload = "\(prefix)\(tabId.uuidString)"
         provider.registerDataRepresentation(forTypeIdentifier: typeIdentifier, visibility: .ownProcess) { completion in
             let data = payload.data(using: .utf8)
-            Task { @MainActor in
-                completion(data, nil)
-            }
+            completion(data, nil)
             return nil
         }
         return provider
