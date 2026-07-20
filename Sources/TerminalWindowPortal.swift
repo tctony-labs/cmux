@@ -670,6 +670,7 @@ final class WindowTerminalPortal: NSObject {
     private var lastLoggedBonsplitContainerSignature: String?
     var beforeRelativeSubviewInsertionForTesting: ((NSView, NSView) -> Void)?
     var invalidRelativeSubviewRejectedForTesting: ((NSView, NSView) -> Void)?
+    var hostedSubviewInsertedForTesting: ((Bool) -> Void)?
 #endif
 
     private struct Entry {

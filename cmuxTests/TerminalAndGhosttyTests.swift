@@ -984,6 +984,72 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
     }
 }
 
+@Suite(.serialized)
+@MainActor
+struct TerminalPortalWindowAttachmentRegressionTests {
+    private final class WindowAttachCallbackView: NSView {
+        var onAttach: (() -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard window != nil, let callback = onAttach else { return }
+            onAttach = nil
+            callback()
+        }
+    }
+
+    @Test
+    func visibilityRaiseDuringWindowAttachmentKeepsDividerOverlayOrder() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        let portal = WindowTerminalPortal(window: window)
+        let contentView = try #require(window.contentView)
+        let anchor1 = NSView(frame: NSRect(x: 20, y: 20, width: 220, height: 180))
+        let anchor2 = NSView(frame: NSRect(x: 80, y: 60, width: 220, height: 180))
+        let anchor3 = NSView(frame: NSRect(x: 140, y: 100, width: 220, height: 180))
+        contentView.addSubview(anchor1)
+        contentView.addSubview(anchor2)
+        contentView.addSubview(anchor3)
+
+        let terminal1 = GhosttyNSView(frame: NSRect(x: 0, y: 0, width: 120, height: 80))
+        let hosted1 = GhosttySurfaceScrollView(surfaceView: terminal1)
+        let terminal2 = GhosttyNSView(frame: NSRect(x: 0, y: 0, width: 120, height: 80))
+        let hosted2 = GhosttySurfaceScrollView(surfaceView: terminal2)
+        let terminal3 = GhosttyNSView(frame: NSRect(x: 0, y: 0, width: 120, height: 80))
+        let hosted3 = GhosttySurfaceScrollView(surfaceView: terminal3)
+
+        portal.bind(hostedView: hosted1, to: anchor1, visibleInUI: false)
+        portal.bind(hostedView: hosted2, to: anchor2, visibleInUI: true)
+        portal.bind(hostedView: hosted3, to: anchor3, visibleInUI: true)
+
+        var overlayStayedTopmost: Bool?
+        portal.hostedSubviewInsertedForTesting = { overlayStayedTopmost = $0 }
+        let callbackView = WindowAttachCallbackView(frame: contentView.bounds)
+        callbackView.onAttach = {
+            portal.bind(hostedView: hosted1, to: anchor1, visibleInUI: true)
+        }
+        let detachedContainer = NSView(frame: contentView.bounds)
+        detachedContainer.addSubview(callbackView)
+        contentView.addSubview(detachedContainer)
+
+        #expect(
+            overlayStayedTopmost == true,
+            "Raising a terminal during window attachment must not displace and reinsert the divider overlay"
+        )
+        let overlapInWindow = contentView.convert(NSPoint(x: 160, y: 120), to: nil)
+        #expect(
+            portal.terminalViewAtWindowPoint(overlapInWindow) === terminal1,
+            "A terminal raised during window attachment should remain above sibling terminals"
+        )
+    }
+}
+
 @Test @MainActor
 func terminalPortalDoesNotRebindAfterWindowWillClose() {
     let baseline = TerminalWindowPortalRegistry.debugPortalCount()
