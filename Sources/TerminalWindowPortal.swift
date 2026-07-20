@@ -1252,7 +1252,12 @@ final class WindowTerminalPortal: NSObject {
                 "reason=attach super=\(portalDebugToken(hostedView.superview))"
             )
 #endif
-            hostView.addSubview(hostedView, positioned: .above, relativeTo: nil)
+            // Keep the divider overlay topmost without reinserting it. Reordering an existing
+            // overlay during a nested viewDidMoveToWindow callback can invalidate AppKit's index.
+            hostView.addSubview(hostedView, positioned: .below, relativeTo: dividerOverlayView)
+#if DEBUG
+            hostedSubviewInsertedForTesting?(hostView.subviews.last === dividerOverlayView)
+#endif
         } else if (becameVisible || priorityIncreased), hostView.subviews.last !== hostedView {
             // Refresh z-order only when a view becomes visible or gets a higher priority.
             // Anchor-only churn is common during split tree updates; forcing remove/add there
@@ -1264,7 +1269,10 @@ final class WindowTerminalPortal: NSObject {
                 "priorityIncreased=\(priorityIncreased ? 1 : 0)"
             )
 #endif
-            hostView.addSubview(hostedView, positioned: .above, relativeTo: nil)
+            hostView.addSubview(hostedView, positioned: .below, relativeTo: dividerOverlayView)
+#if DEBUG
+            hostedSubviewInsertedForTesting?(hostView.subviews.last === dividerOverlayView)
+#endif
         }
 
         ensureDividerOverlayOnTop()
