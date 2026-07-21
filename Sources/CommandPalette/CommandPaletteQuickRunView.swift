@@ -1,4 +1,3 @@
-import AppKit
 import CmuxCommandPalette
 import SwiftUI
 
@@ -8,12 +7,10 @@ struct CommandPaletteQuickRunView: View {
     let output: String
     let isOutputTruncated: Bool
     let state: CommandPaletteQuickRunState
-    let outputWidth: CGFloat
-    let maximumOutputHeight: CGFloat
+    let outputHeight: CGFloat
     let onCancel: () -> Void
 
     private let bottomAnchor = "command-palette-quick-run-bottom"
-    private let minimumOutputHeight: CGFloat = 120
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,7 +52,7 @@ struct CommandPaletteQuickRunView: View {
                     proxy.scrollTo(bottomAnchor, anchor: .bottom)
                 }
             }
-            .frame(height: outputViewportHeight)
+            .frame(height: outputHeight)
 
             Divider()
 
@@ -97,17 +94,6 @@ struct CommandPaletteQuickRunView: View {
             defaultValue: "Earlier output was truncated."
         )
         return notice + "\n\n" + output
-    }
-
-    private var outputViewportHeight: CGFloat {
-        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        let textHeight = (displayOutput as NSString).boundingRect(
-            with: NSSize(width: max(1, outputWidth), height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font]
-        ).height
-        let contentHeight = ceil(textHeight) + 17
-        return min(maximumOutputHeight, max(minimumOutputHeight, contentHeight))
     }
 
     private var statusText: String {

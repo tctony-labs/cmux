@@ -3699,7 +3699,7 @@ struct ContentView: View {
                 CommandPaletteMultilineTextEditorRepresentable.defaultMinimumHeight,
                 proxy.size.height - 120
             )
-            let quickRunMaximumOutputHeight = max(120, min(400, proxy.size.height - 170))
+            let quickRunOutputHeight = max(120, min(400, proxy.size.height - 170))
 
             ZStack(alignment: .top) {
                 Color.clear
@@ -3738,8 +3738,7 @@ struct ContentView: View {
                             output: commandPaletteQuickRunModel.output,
                             isOutputTruncated: commandPaletteQuickRunModel.isOutputTruncated,
                             state: commandPaletteQuickRunModel.state,
-                            outputWidth: targetWidth - 24,
-                            maximumOutputHeight: quickRunMaximumOutputHeight,
+                            outputHeight: quickRunOutputHeight,
                             onCancel: {
                                 Task {
                                     await commandPaletteQuickRunModel.cancel()
