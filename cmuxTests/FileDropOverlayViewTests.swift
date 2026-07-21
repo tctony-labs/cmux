@@ -3,6 +3,8 @@ import ObjectiveC.runtime
 import SwiftUI
 import WebKit
 import XCTest
+import CmuxCommandPalette
+import CmuxProcess
 import CmuxUpdater
 
 #if canImport(cmux_DEV)
@@ -16,7 +18,13 @@ final class FileDropOverlayViewTests: XCTestCase {
     private func makeContentViewWindow(windowId: UUID = UUID()) -> NSWindow {
         _ = NSApplication.shared
 
-        let root = ContentView(updateViewModel: UpdateStateModel(), windowId: windowId)
+        let root = ContentView(
+            updateViewModel: UpdateStateModel(),
+            windowId: windowId,
+            commandPaletteQuickRunModel: CommandPaletteQuickRunModel(
+                runner: StreamingCommandRunner()
+            )
+        )
             .environmentObject(TabManager())
             .environmentObject(TerminalNotificationStore.shared)
             .environmentObject(SidebarState())

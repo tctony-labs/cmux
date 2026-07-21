@@ -752,6 +752,14 @@ struct cmuxApp: App {
 
             // Close tab/workspace
             CommandGroup(after: .newItem) {
+                splitCommandButton(
+                    title: String(localized: "menu.file.quickRun", defaultValue: "Quick Run…"),
+                    shortcut: menuShortcut(for: .quickRun)
+                ) {
+                    let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
+                    NotificationCenter.default.post(name: .commandPaletteQuickRunRequested, object: targetWindow)
+                }
+
                 splitCommandButton(title: String(localized: "menu.file.goToWorkspace", defaultValue: "Go to Workspace…"), shortcut: menuShortcut(for: .goToWorkspace)) {
                     let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
                     NotificationCenter.default.post(name: .commandPaletteSwitcherRequested, object: targetWindow)

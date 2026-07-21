@@ -58603,6 +58603,23 @@
         }
       }
     },
+    "commandPalette.kind.quickRun": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Run"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイック実行"
+          }
+        }
+      }
+    },
     "commandPalette.kind.openInFinder": {
       "extractionState": "manual",
       "localizations": {
@@ -58816,6 +58833,159 @@
           "stringUnit": {
             "state": "translated",
             "value": "Робоча область"
+          }
+        }
+      }
+    },
+    "commandPalette.quickRun.cancelled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelled"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル済み"
+          }
+        }
+      }
+    },
+    "commandPalette.quickRun.closeHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘W to close"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘W で閉じる"
+          }
+        }
+      }
+    },
+    "commandPalette.quickRun.exitStatus": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exited with status %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了ステータス: %lld"
+          }
+        }
+      }
+    },
+    "commandPalette.quickRun.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗: %@"
+          }
+        }
+      }
+    },
+    "commandPalette.quickRun.noOutput": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No output"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出力なし"
+          }
+        }
+      }
+    },
+    "commandPalette.quickRun.outputTruncated": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Earlier output was truncated."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前の出力は切り捨てられました。"
+          }
+        }
+      }
+    },
+    "commandPalette.quickRun.running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中"
+          }
+        }
+      }
+    },
+    "commandPalette.quickRun.stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        }
+      }
+    },
+    "commandPalette.quickRun.waitingForOutput": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中…"
           }
         }
       }
@@ -60409,6 +60579,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "按文件名搜索"
+          }
+        }
+      }
+    },
+    "commandPalette.search.shellEmpty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type a shell command to run here."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここで実行するシェルコマンドを入力してください。"
           }
         }
       }
@@ -78824,6 +79011,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "快速打开…"
+          }
+        }
+      }
+    },
+    "menu.file.quickRun": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Run…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイック実行…"
           }
         }
       }
@@ -130120,6 +130324,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "快速打开…"
+          }
+        }
+      }
+    },
+    "shortcut.quickRun.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Run…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイック実行…"
           }
         }
       }

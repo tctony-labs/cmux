@@ -13,6 +13,8 @@ public enum CommandPaletteRequestKind: String, Sendable, CaseIterable {
     case switcher
     /// Opens the quick-open file search palette.
     case fileSearch
+    /// Opens the shell quick-run palette.
+    case quickRun
     /// Opens the rename-tab prompt.
     case renameTab
     /// Opens the rename-workspace prompt.
@@ -33,6 +35,8 @@ public enum CommandPaletteRequestKind: String, Sendable, CaseIterable {
             return "cmux.commandPaletteSwitcherRequested"
         case .fileSearch:
             return "cmux.commandPaletteFileSearchRequested"
+        case .quickRun:
+            return "cmux.commandPaletteQuickRunRequested"
         case .renameTab:
             return "cmux.commandPaletteRenameTabRequested"
         case .renameWorkspace:
@@ -49,7 +53,8 @@ public enum CommandPaletteRequestKind: String, Sendable, CaseIterable {
     /// change rather than a call-site edit.
     public var marksPending: Bool {
         switch self {
-        case .commands, .switcher, .fileSearch, .renameTab, .renameWorkspace, .editWorkspaceDescription:
+        case .commands, .switcher, .fileSearch, .quickRun,
+             .renameTab, .renameWorkspace, .editWorkspaceDescription:
             return true
         }
     }

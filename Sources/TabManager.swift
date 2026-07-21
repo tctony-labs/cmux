@@ -6046,6 +6046,8 @@ extension Notification.Name {
     static let commandPaletteRequested = Notification.Name("cmux.commandPaletteRequested")
     static let commandPaletteSwitcherRequested = Notification.Name("cmux.commandPaletteSwitcherRequested")
     static let commandPaletteFileSearchRequested = Notification.Name("cmux.commandPaletteFileSearchRequested")
+    static let commandPaletteQuickRunRequested = Notification.Name("cmux.commandPaletteQuickRunRequested")
+    static let commandPaletteQuickRunCancelRequested = Notification.Name("cmux.commandPaletteQuickRunCancelRequested")
     static let commandPaletteSubmitRequested = Notification.Name("cmux.commandPaletteSubmitRequested")
     static let commandPaletteAlternateSubmitRequested = Notification.Name("cmux.commandPaletteAlternateSubmitRequested")
     static let commandPaletteDismissRequested = Notification.Name("cmux.commandPaletteDismissRequested")

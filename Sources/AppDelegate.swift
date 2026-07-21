@@ -4,6 +4,7 @@ import CmuxBrowserPanel
 import CmuxCommandPalette
 import CmuxCommandPaletteUI
 import CmuxPanes
+import CmuxProcess
 import CmuxControlSocket
 import CmuxIPCService
 import CmuxTerminalCore
@@ -8020,7 +8021,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
 
-        let root = ContentView(updateViewModel: updateViewModel, windowId: windowId)
+        let commandPaletteQuickRunModel = CommandPaletteQuickRunModel(
+            runner: StreamingCommandRunner()
+        )
+        let root = ContentView(
+            updateViewModel: updateViewModel,
+            windowId: windowId,
+            commandPaletteQuickRunModel: commandPaletteQuickRunModel
+        )
             .environmentObject(tabManager)
             .environmentObject(notificationStore)
             .environmentObject(notificationStore.sidebarUnread)
@@ -12665,6 +12673,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let paletteFieldEditorHasMarkedText = commandPaletteFieldEditorHasMarkedText(in: paletteWindow)
             let paletteSnapshot = mainWindowId(for: paletteWindow).map(commandPaletteSnapshot(windowId:)) ?? .empty
             let paletteUsesInlineReturnHandling = paletteUsesInlineTextHandling
+            if paletteSnapshot.mode == "shell_output" {
+                if matchConfiguredShortcut(event: event, action: .closeTab) {
+                    NotificationCenter.default.post(
+                        name: .commandPaletteDismissRequested,
+                        object: paletteWindow
+                    )
+                    return true
+                }
+                if normalizedFlags == [.control],
+                   chars.lowercased() == "c" || event.keyCode == 8 {
+                    NotificationCenter.default.post(
+                        name: .commandPaletteQuickRunCancelRequested,
+                        object: paletteWindow
+                    )
+                    return true
+                }
+            }
             if isPlainEscape {
                 if paletteFieldEditorHasMarkedText {
                     return false
@@ -12766,6 +12791,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return true
             }
 
+            if matchConfiguredShortcut(event: event, action: .quickRun) {
+                let targetWindow = commandPaletteTargetWindow ?? event.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+                postCommandPaletteRequest(
+                    kind: .quickRun,
+                    preferredWindow: targetWindow,
+                    source: "shortcut.quickRun"
+                )
+                return true
+            }
+
             if activeConfiguredShortcutChordPrefixForCurrentEvent == nil,
                armConfiguredShortcutChordIfNeeded(event: event, actions: [.commandPalette]) {
                 return true
@@ -12780,6 +12815,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if activeConfiguredShortcutChordPrefixForCurrentEvent == nil,
                !hasFocusedAddressBarInShortcutContext,
                armConfiguredShortcutChordIfNeeded(event: event, actions: [.quickOpenFile]) {
+                return true
+            }
+
+            if activeConfiguredShortcutChordPrefixForCurrentEvent == nil,
+               armConfiguredShortcutChordIfNeeded(event: event, actions: [.quickRun]) {
                 return true
             }
         }
@@ -12975,6 +13015,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 kind: .fileSearch,
                 preferredWindow: targetWindow,
                 source: "shortcut.quickOpenFile"
+            )
+            return true
+        }
+
+        if matchConfiguredShortcut(event: event, action: .quickRun) {
+            let targetWindow = commandPaletteTargetWindow ?? event.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+            postCommandPaletteRequest(
+                kind: .quickRun,
+                preferredWindow: targetWindow,
+                source: "shortcut.quickRun"
             )
             return true
         }

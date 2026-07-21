@@ -26,6 +26,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Hashable, SettingCod
     case newTab
     case newBrowserWorkspace
     case openFolder
+    case quickRun
     case reopenPreviousSession
     case goToWorkspace
     case quickOpenFile
@@ -164,7 +165,8 @@ extension ShortcutAction {
         case .openSettings, .reloadConfiguration, .showHideAllWindows, .globalSearch,
              .newWindow, .closeWindow, .toggleFullScreen, .quit:
             return .app
-        case .toggleSidebar, .newTab, .newBrowserWorkspace, .openFolder, .quickOpenFile, .reopenPreviousSession, .goToWorkspace,
+        case .toggleSidebar, .newTab, .newBrowserWorkspace, .openFolder, .quickRun,
+             .quickOpenFile, .reopenPreviousSession, .goToWorkspace,
              .commandPalette, .commandPaletteNext, .commandPalettePrevious, .sendFeedback,
              .showNotifications, .jumpToUnread, .toggleUnread, .markOldestUnreadAndJumpNext,
              .focusRightSidebar, .switchRightSidebarToFiles, .switchRightSidebarToFind,
@@ -304,6 +306,8 @@ extension ShortcutAction {
         case .newBrowserWorkspace:
             return String(localized: "shortcut.newBrowserWorkspace.label", defaultValue: "New Browser Workspace")
         case .openFolder: return "Open Folder"
+        case .quickRun:
+            return String(localized: "shortcut.quickRun.label", defaultValue: "Quick Run…")
         case .quickOpenFile:
             return String(localized: "shortcut.quickOpenFile.label", defaultValue: "Quick Open…")
         case .reopenPreviousSession: return "Restore Previous App Launch"

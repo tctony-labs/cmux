@@ -85,7 +85,17 @@ export const shortcutCategories: ShortcutCategory[] = [
           ja: "新規ワークスペースと同様ですが、最初のサーフェスがブラウザペインになり、アドレスバーにフォーカスします",
         },
       },
-      { id: "openFolder", combos: [["⌘", "O"]], description: { en: "Open folder", ja: "フォルダを開く" } },
+      {
+        id: "openFolder",
+        combos: [],
+        description: { en: "Open folder", ja: "フォルダを開く" },
+        note: { en: "unbound by default", ja: "デフォルトでは未割り当て" },
+      },
+      {
+        id: "quickRun",
+        combos: [["⌘", "O"]],
+        description: { en: "Quick run", ja: "クイック実行" },
+      },
       {
         id: "goToWorkspace",
         combos: [["⌘", "P"]],

@@ -1065,6 +1065,7 @@ func titlebarShortcutHintShouldShow(
 struct ContentView: View {
     var updateViewModel: UpdateStateModel
     let windowId: UUID
+    let commandPaletteQuickRunModel: CommandPaletteQuickRunModel
     @EnvironmentObject var tabManager: TabManager
     // ContentView observes the coalesced unread projection, NOT the notification
     // store. Reading `notificationStore` directly here would re-render the entire
@@ -2920,6 +2921,36 @@ struct ContentView: View {
             openCommandPaletteFileSearch()
         })
 
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(
+            for: .commandPaletteQuickRunRequested
+        )) { notification in
+            let requestedWindow = notification.object as? NSWindow
+            guard Self.shouldHandleCommandPaletteRequest(
+                observedWindow: observedWindow,
+                requestedWindow: requestedWindow,
+                keyWindow: NSApp.keyWindow,
+                mainWindow: NSApp.mainWindow
+            ) else { return }
+            openCommandPaletteQuickRun()
+        })
+
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(
+            for: .commandPaletteQuickRunCancelRequested
+        )) { notification in
+            guard isCommandPalettePresented,
+                  case .shellOutput = commandPaletteMode else { return }
+            let requestedWindow = notification.object as? NSWindow
+            guard Self.shouldHandleCommandPaletteRequest(
+                observedWindow: observedWindow,
+                requestedWindow: requestedWindow,
+                keyWindow: NSApp.keyWindow,
+                mainWindow: NSApp.mainWindow
+            ) else { return }
+            Task {
+                await commandPaletteQuickRunModel.cancel()
+            }
+        })
+
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .defaultTerminalRegistrationDidChange)) { _ in
             refreshCachedDefaultTerminalStatus()
         })
@@ -3668,6 +3699,7 @@ struct ContentView: View {
                 CommandPaletteMultilineTextEditorRepresentable.defaultMinimumHeight,
                 proxy.size.height - 120
             )
+            let quickRunMaximumOutputHeight = max(120, min(400, proxy.size.height - 170))
 
             ZStack(alignment: .top) {
                 Color.clear
@@ -3698,6 +3730,21 @@ struct ContentView: View {
                         commandPaletteWorkspaceDescriptionInputView(
                             target: target,
                             maxEditorHeight: workspaceDescriptionMaxEditorHeight
+                        )
+                    case .shellOutput:
+                        CommandPaletteQuickRunView(
+                            command: commandPaletteQuickRunModel.command,
+                            directory: commandPaletteQuickRunModel.directory,
+                            output: commandPaletteQuickRunModel.output,
+                            isOutputTruncated: commandPaletteQuickRunModel.isOutputTruncated,
+                            state: commandPaletteQuickRunModel.state,
+                            outputWidth: targetWidth - 24,
+                            maximumOutputHeight: quickRunMaximumOutputHeight,
+                            onCancel: {
+                                Task {
+                                    await commandPaletteQuickRunModel.cancel()
+                                }
+                            }
                         )
                     }
                 }
@@ -4844,6 +4891,9 @@ struct ContentView: View {
     }
 
     private var commandPaletteCurrentSearchFingerprint: Int {
+        if CommandPaletteShellInput(query: commandPaletteQuery) != nil {
+            return 0
+        }
         let scope = commandPaletteListScope
         return commandPaletteEntriesFingerprint(
             for: scope,
@@ -4867,11 +4917,17 @@ struct ContentView: View {
         newQuery: String,
         hasVisibleResults: Bool
     ) -> Bool {
-        hasVisibleResults && commandPaletteListScope(for: oldQuery) != commandPaletteListScope(for: newQuery)
+        guard hasVisibleResults else { return false }
+        let shellModeChanged = (CommandPaletteShellInput(query: oldQuery) != nil)
+            != (CommandPaletteShellInput(query: newQuery) != nil)
+        return shellModeChanged || commandPaletteListScope(for: oldQuery) != commandPaletteListScope(for: newQuery)
     }
 
     nonisolated static func commandPaletteListIdentity(for query: String) -> String {
-        commandPaletteListScope(for: query).rawValue
+        if CommandPaletteShellInput(query: query) != nil {
+            return "shell"
+        }
+        return commandPaletteListScope(for: query).rawValue
     }
 
     private var commandPaletteSwitcherIncludesSurfaceEntries: Bool {
@@ -4895,6 +4951,12 @@ struct ContentView: View {
     }
 
     private var commandPaletteEmptyStateText: String {
+        if CommandPaletteShellInput(query: commandPaletteQuery) != nil {
+            return String(
+                localized: "commandPalette.search.shellEmpty",
+                defaultValue: "Type a shell command to run here."
+            )
+        }
         switch commandPaletteListScope {
         case .commands:
             return String(localized: "commandPalette.search.commandsEmpty", defaultValue: "No commands match your search.")
@@ -5216,6 +5278,10 @@ struct ContentView: View {
             stateQuery: commandPaletteQuery,
             observedQuery: query
         )
+        if let shellInput = CommandPaletteShellInput(query: effectiveQuery) {
+            refreshCommandPaletteShellResults(shellInput)
+            return
+        }
         let scope = Self.commandPaletteListScope(for: effectiveQuery)
         let matchingQuery = Self.commandPaletteQueryForMatching(
             query: effectiveQuery,
@@ -5554,6 +5620,65 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private func refreshCommandPaletteShellResults(_ shellInput: CommandPaletteShellInput) {
+        cancelCommandPaletteSearch()
+        commandPaletteSearchRequestID &+= 1
+        let requestID = commandPaletteSearchRequestID
+        commandPalettePendingActivation = nil
+
+        let results: [CommandPaletteSearchResult]
+        if shellInput.isExecutable {
+            let command = CommandPaletteCommand(
+                id: "palette.runShellCommand",
+                rank: 0,
+                title: shellInput.command,
+                subtitle: "",
+                shortcutHint: nil,
+                kindLabel: String(
+                    localized: "commandPalette.kind.quickRun",
+                    defaultValue: "Quick Run"
+                ),
+                keywords: [],
+                dismissOnRun: false,
+                action: {
+                    runCommandPaletteShellInput(shellInput)
+                }
+            )
+            results = [CommandPaletteSearchResult(command: command, score: 0, titleMatchIndices: [])]
+        } else {
+            results = []
+        }
+
+        cachedCommandPaletteResults = results
+        commandPaletteResolvedSearchRequestID = requestID
+        commandPaletteResolvedSearchScope = .switcher
+        commandPaletteResolvedSearchFingerprint = nil
+        commandPaletteResolvedMatchingQuery = shellInput.command
+        isCommandPaletteSearchPending = false
+        setCommandPaletteVisibleResults(results, scope: .switcher, fingerprint: nil)
+        commandPaletteResultsRevision &+= 1
+    }
+
+    private func runCommandPaletteShellInput(_ shellInput: CommandPaletteShellInput) {
+        guard shellInput.isExecutable else {
+            NSSound.beep()
+            return
+        }
+        let directory = tabManager.selectedWorkspace?.resolvedWorkingDirectory()
+            ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let shell = ProcessInfo.processInfo.environment["SHELL"]
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+            ?? "/bin/zsh"
+        commandPaletteMode = .shellOutput
+        isCommandPaletteSearchFocused = false
+        commandPaletteQuickRunModel.start(
+            command: shellInput.command,
+            shell: shell,
+            directory: directory
+        )
+        syncCommandPaletteDebugStateForObservedWindow()
     }
 
     private func commandPaletteEntriesFingerprint(for scope: CommandPaletteListScope) -> Int {
@@ -9006,6 +9131,10 @@ struct ContentView: View {
     }
 
     private func runSelectedCommandPaletteResult() {
+        if let shellInput = CommandPaletteShellInput(query: commandPaletteQuery) {
+            runCommandPaletteShellInput(shellInput)
+            return
+        }
         guard commandPaletteHasCurrentResolvedResults else {
             if isCommandPalettePresented {
                 commandPalettePendingActivation = .selected(
@@ -9022,6 +9151,7 @@ struct ContentView: View {
 
     private func completeSelectedCommandPaletteResult() -> Bool {
         guard case .commands = commandPaletteMode else { return false }
+        guard CommandPaletteShellInput(query: commandPaletteQuery) == nil else { return false }
         let results: [CommandPaletteSearchResult]
         if commandPaletteHasCurrentResolvedResults {
             results = cachedCommandPaletteResults
@@ -9091,6 +9221,9 @@ struct ContentView: View {
                 target: target,
                 proposedDescription: commandPaletteWorkspaceDescriptionDraft
             )
+        case .shellOutput:
+            guard !commandPaletteQuickRunModel.state.isRunning else { return }
+            openCommandPaletteQuickRun()
         }
     }
 
@@ -9150,6 +9283,21 @@ struct ContentView: View {
 
     private func openCommandPaletteFileSearch() {
         handleCommandPaletteListRequest(scope: .fileSearch)
+    }
+
+    private func openCommandPaletteQuickRun() {
+        guard isCommandPalettePresented else {
+            presentCommandPalette(initialQuery: "! ")
+            return
+        }
+
+        if case .commands = commandPaletteMode,
+           CommandPaletteShellInput(query: commandPaletteQuery) != nil {
+            dismissCommandPalette()
+            return
+        }
+
+        resetCommandPaletteListState(initialQuery: "! ")
     }
 
     private func handleCommandPaletteListRequest(scope: CommandPaletteListScope) {
@@ -9285,13 +9433,17 @@ struct ContentView: View {
         let mode: String
         switch commandPaletteMode {
         case .commands:
-            mode = commandPaletteListScope.rawValue
+            mode = CommandPaletteShellInput(query: commandPaletteQuery) == nil
+                ? commandPaletteListScope.rawValue
+                : "shell"
         case .renameInput:
             mode = "rename_input"
         case .renameConfirm:
             mode = "rename_confirm"
         case .workspaceDescriptionInput:
             mode = "workspace_description_input"
+        case .shellOutput:
+            mode = "shell_output"
         }
 
         let rows = Array(commandPaletteVisibleResults.prefix(20)).map { result in
@@ -9330,6 +9482,7 @@ struct ContentView: View {
     }
 
     private func resetCommandPaletteListState(initialQuery: String) {
+        commandPaletteQuickRunModel.reset()
         commandPaletteMode = .commands
         commandPaletteQuery = initialQuery
         commandPaletteRenameDraft = ""
@@ -9376,6 +9529,7 @@ struct ContentView: View {
         commandPaletteSearchRequestID &+= 1
         isCommandPalettePresented = false
         commandPaletteMode = .commands
+        commandPaletteQuickRunModel.reset()
         commandPaletteQuery = ""
         commandPaletteRenameDraft = ""
         commandPaletteWorkspaceDescriptionDraft = ""
@@ -9640,6 +9794,8 @@ struct ContentView: View {
             return "renameConfirm"
         case .workspaceDescriptionInput:
             return "workspaceDescriptionInput"
+        case .shellOutput:
+            return "shellOutput"
         }
     }
 #endif
@@ -9738,6 +9894,8 @@ struct ContentView: View {
             case .renameConfirm:
                 return
             case .workspaceDescriptionInput:
+                return
+            case .shellOutput:
                 return
             }
         }

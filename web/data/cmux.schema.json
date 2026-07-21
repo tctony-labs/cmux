@@ -1154,6 +1154,7 @@
               "newTab",
               "newBrowserWorkspace",
               "openFolder",
+              "quickRun",
               "reopenPreviousSession",
               "goToWorkspace",
               "commandPalette",

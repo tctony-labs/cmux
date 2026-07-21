@@ -8,6 +8,7 @@ import Testing
         #expect(CommandPaletteRequestKind.commands.notificationName == "cmux.commandPaletteRequested")
         #expect(CommandPaletteRequestKind.switcher.notificationName == "cmux.commandPaletteSwitcherRequested")
         #expect(CommandPaletteRequestKind.fileSearch.notificationName == "cmux.commandPaletteFileSearchRequested")
+        #expect(CommandPaletteRequestKind.quickRun.notificationName == "cmux.commandPaletteQuickRunRequested")
         #expect(CommandPaletteRequestKind.renameTab.notificationName == "cmux.commandPaletteRenameTabRequested")
         #expect(CommandPaletteRequestKind.renameWorkspace.notificationName == "cmux.commandPaletteRenameWorkspaceRequested")
         #expect(

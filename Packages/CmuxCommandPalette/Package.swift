@@ -13,9 +13,13 @@ let package = Package(
             targets: ["CmuxCommandPalette"]
         ),
     ],
+    dependencies: [
+        .package(path: "../CmuxProcess"),
+    ],
     targets: [
         .target(
             name: "CmuxCommandPalette",
+            dependencies: ["CmuxProcess"],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
                 .enableUpcomingFeature("ExistentialAny"),
@@ -24,7 +28,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CmuxCommandPaletteTests",
-            dependencies: ["CmuxCommandPalette"],
+            dependencies: ["CmuxCommandPalette", "CmuxProcess"],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
                 .enableUpcomingFeature("ExistentialAny"),

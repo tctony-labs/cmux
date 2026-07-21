@@ -16,6 +16,8 @@ extension ContentView {
             return .newWindow
         case "palette.openFolder":
             return .openFolder
+        case "palette.runShellCommand":
+            return .quickRun
         case "palette.reopenPreviousSession":
             return .reopenPreviousSession
         case "palette.reopenClosedBrowserTab":

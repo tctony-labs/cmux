@@ -56,6 +56,7 @@ Values for `shortcuts.bindings.<action>`:
 
 ## Command palette
 
+- `shortcuts.bindings.quickRun`
 - `shortcuts.bindings.commandPalette`
 - `shortcuts.bindings.commandPaletteNext`
 - `shortcuts.bindings.commandPalettePrevious`
