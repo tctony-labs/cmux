@@ -43,30 +43,36 @@ public struct TerminalPathResolver: Sendable {
     }
 
     /// Resolves raw terminal text to an existing path and optional source
-    /// line number.
+    /// location.
     ///
-    /// A trailing `:line` or `:start-end` suffix is treated as terminal
-    /// location metadata when the path before it exists. The first line of a
-    /// range is returned.
+    /// A trailing `:line`, `:line:column`, or `:start-end` suffix is treated
+    /// as terminal location metadata when the path before it exists. The first
+    /// line of a range is returned.
     ///
     /// - Parameters:
     ///   - rawText: The raw text under the cursor or selection.
     ///   - cwd: The surface's working directory used for relative candidates.
-    /// - Returns: The first existing path and its optional line, or `nil`.
+    /// - Returns: The first existing path and its optional location, or `nil`.
     public func resolveQuicklookFileReference(
         _ rawText: String,
         cwd: String?
-    ) -> (path: String, lineNumber: Int?)? {
+    ) -> (path: String, lineNumber: Int?, columnNumber: Int?)? {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         var seenPaths: Set<String> = []
         for token in trimmed.pathResolutionCandidates() {
-            var references: [(pathToken: String, lineNumber: Int?)] = []
-            if let lineReference = token.terminalFileLineReference() {
-                references.append((lineReference.pathToken, lineReference.lineNumber))
+            var references: [(pathToken: String, lineNumber: Int?, columnNumber: Int?)] = []
+            if let locationReference = token.terminalFileLocationReference() {
+                references.append(
+                    (
+                        locationReference.pathToken,
+                        locationReference.lineNumber,
+                        locationReference.columnNumber
+                    )
+                )
             }
-            references.append((token, nil))
+            references.append((token, nil, nil))
 
             for reference in references {
                 let normalizedToken = reference.pathToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -84,7 +90,7 @@ public struct TerminalPathResolver: Sendable {
                 let standardizedPath = (candidatePath as NSString).standardizingPath
                 guard seenPaths.insert(standardizedPath).inserted else { continue }
                 if fileExists(standardizedPath) {
-                    return (standardizedPath, reference.lineNumber)
+                    return (standardizedPath, reference.lineNumber, reference.columnNumber)
                 }
             }
         }
@@ -107,15 +113,15 @@ public struct TerminalPathResolver: Sendable {
         _ line: String,
         column: Int,
         cwd: String
-    ) -> (rawToken: String, path: String, lineNumber: Int?)? {
+    ) -> (rawToken: String, path: String, lineNumber: Int?, columnNumber: Int?)? {
         if let rawToken = line.gitDiffPathToken(containingColumn: column),
            let reference = resolveQuicklookFileReference(rawToken, cwd: cwd) {
-            return (rawToken, reference.path, reference.lineNumber)
+            return (rawToken, reference.path, reference.lineNumber, reference.columnNumber)
         }
 
         for rawToken in line.pathTokenCandidates(containingColumn: column) {
             if let reference = resolveQuicklookFileReference(rawToken, cwd: cwd) {
-                return (rawToken, reference.path, reference.lineNumber)
+                return (rawToken, reference.path, reference.lineNumber, reference.columnNumber)
             }
         }
         return nil
@@ -139,11 +145,11 @@ public struct TerminalPathResolver: Sendable {
     /// - Parameters:
     ///   - rawText: The raw open-URL text from the runtime.
     ///   - cwd: The surface's working directory.
-    /// - Returns: The existing path and optional line number, or `nil`.
+    /// - Returns: The existing path and optional source location, or `nil`.
     public func resolveOpenURLFileReference(
         _ rawText: String,
         cwd: String?
-    ) -> (path: String, lineNumber: Int?)? {
+    ) -> (path: String, lineNumber: Int?, columnNumber: Int?)? {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         guard URL(string: trimmed)?.scheme == nil else { return nil }

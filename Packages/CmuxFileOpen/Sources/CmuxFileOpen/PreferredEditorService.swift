@@ -117,12 +117,13 @@ public struct PreferredEditorService: FileOpening {
         }
     }
 
-    /// Opens a file at a source line through the user's Emacs client.
+    /// Opens a file at a source location through the user's Emacs client.
     ///
     /// - Parameters:
     ///   - url: The file to visit.
     ///   - lineNumber: The one-based source line to reveal.
-    public func openInEmacs(_ url: URL, lineNumber: Int) {
+    ///   - columnNumber: The optional one-based source column to reveal.
+    public func openInEmacs(_ url: URL, lineNumber: Int, columnNumber: Int? = nil) {
         if capture.appendLineIfConfigured(
             envKey: "CMUX_UI_TEST_CAPTURE_OPEN_PATH",
             line: url.path
@@ -133,7 +134,14 @@ public struct PreferredEditorService: FileOpening {
         let escapedPath = url.path
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let expression = "(tctony/persp-view-file-line-external \"\(escapedPath)\" \(lineNumber))"
+        let openLineExpression =
+            "(tctony/persp-view-file-line-external \"\(escapedPath)\" \(lineNumber))"
+        let expression: String
+        if let columnNumber {
+            expression = "(progn \(openLineExpression) (move-to-column \(columnNumber - 1)))"
+        } else {
+            expression = openLineExpression
+        }
         let process = Process()
         process.executableURL = emacsClientExecutableURL
         process.arguments = emacsClientArgumentsPrefix + ["--eval", expression]

@@ -52,10 +52,15 @@ private func existsIn(_ existingPaths: Set<String>) -> @Sendable (String) -> Boo
 
 @Suite struct TerminalQuicklookPathResolutionTests {
     @Test(arguments: [
-        ("Sources/App.swift:23", 23),
-        ("Sources/App.swift:25-29", 25),
+        ("Sources/App.swift:23", 23, nil),
+        ("Sources/App.swift:23:7", 23, 7),
+        ("Sources/App.swift:25-29", 25, nil),
     ])
-    func resolvesFileLineReferences(rawToken: String, expectedLine: Int) throws {
+    func resolvesFileLocationReferences(
+        rawToken: String,
+        expectedLine: Int,
+        expectedColumn: Int?
+    ) throws {
         let existingFile = "/Users/dev/project/Sources/App.swift"
         let reference = try #require(
             TerminalPathResolver(fileExists: existsIn([existingFile])).resolveQuicklookFileReference(
@@ -66,6 +71,7 @@ private func existsIn(_ existingPaths: Set<String>) -> @Sendable (String) -> Boo
 
         #expect(reference.path == existingFile)
         #expect(reference.lineNumber == expectedLine)
+        #expect(reference.columnNumber == expectedColumn)
     }
 
     @Test func fallsBackToStrippedPathWhenLiteralPathIsMissing() {
@@ -162,17 +168,20 @@ private func existsIn(_ existingPaths: Set<String>) -> @Sendable (String) -> Boo
 }
 
 @Suite struct TerminalOpenURLFilePathTests {
-    @Test func resolvesFileLineReference() throws {
-        let existingFile = "/Users/dev/project/Sources/App.swift"
+    @Test func resolvesFileLineAndColumnReference() throws {
+        let existingFile =
+            "/Users/changtang/Develop/XiaoWei/workspace/src/xiaowei-next/worktrees/outpost/" +
+            "crates/xw-core/src/bridge/hub.rs"
         let reference = try #require(
             TerminalPathResolver(fileExists: existsIn([existingFile])).resolveOpenURLFileReference(
-                "Sources/App.swift:25-29",
-                cwd: "/Users/dev/project"
+                "\(existingFile):75:13",
+                cwd: "/Users/changtang/Develop/XiaoWei/workspace/src/xiaowei-next/worktrees/outpost"
             )
         )
 
         #expect(reference.path == existingFile)
-        #expect(reference.lineNumber == 25)
+        #expect(reference.lineNumber == 75)
+        #expect(reference.columnNumber == 13)
     }
 
     @Test(arguments: ["a/rules/tony.md", "b/rules/tony.md"])

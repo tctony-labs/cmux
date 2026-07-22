@@ -156,13 +156,23 @@ extension String {
         return candidates
     }
 
-    /// Splits a terminal file reference such as `Sources/App.swift:23` or
-    /// `Sources/App.swift:25-29` into its path token and first line number.
-    func terminalFileLineReference() -> (pathToken: String, lineNumber: Int)? {
+    /// Splits a terminal file reference such as `Sources/App.swift:23`,
+    /// `Sources/App.swift:23:7`, or `Sources/App.swift:25-29` into its path and
+    /// source location.
+    func terminalFileLocationReference() -> (pathToken: String, lineNumber: Int, columnNumber: Int?)? {
         guard let colon = lastIndex(of: ":") else { return nil }
 
         let pathToken = String(self[..<colon])
-        let location = self[index(after: colon)...].split(
+        let trailingLocation = self[index(after: colon)...]
+        if let columnNumber = trailingLocation.positiveDecimalInteger,
+           let lineColon = pathToken.lastIndex(of: ":"),
+           let lineNumber = pathToken[pathToken.index(after: lineColon)...].positiveDecimalInteger {
+            let pathBeforeLocation = String(pathToken[..<lineColon])
+            guard !pathBeforeLocation.isEmpty else { return nil }
+            return (pathBeforeLocation, lineNumber, columnNumber)
+        }
+
+        let location = trailingLocation.split(
             separator: "-",
             maxSplits: 1,
             omittingEmptySubsequences: false
@@ -186,7 +196,7 @@ extension String {
             }
         }
 
-        return (pathToken, lineNumber)
+        return (pathToken, lineNumber, nil)
     }
 
     /// Path-token candidates around a column of a visible terminal line: the
@@ -291,6 +301,19 @@ extension String {
         }
 
         return nil
+    }
+}
+
+extension Substring {
+    /// The receiver parsed as a positive decimal integer.
+    fileprivate var positiveDecimalInteger: Int? {
+        guard !isEmpty,
+              allSatisfy(\.isNumber),
+              let value = Int(self),
+              value > 0 else {
+            return nil
+        }
+        return value
     }
 }
 

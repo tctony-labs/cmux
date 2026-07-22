@@ -3445,7 +3445,8 @@ class GhosttyApp {
                     if let lineNumber = reference.lineNumber {
                         PreferredEditorService(defaults: .standard).openInEmacs(
                             URL(fileURLWithPath: resolvedPath),
-                            lineNumber: lineNumber
+                            lineNumber: lineNumber,
+                            columnNumber: reference.columnNumber
                         )
                         return (true, resolvedPath)
                     }
@@ -3792,6 +3793,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private struct WordPathResolution {
         let path: String
         let lineNumber: Int?
+        let columnNumber: Int?
         let source: WordPathResolutionSource
         let rawToken: String
     }
@@ -3799,12 +3801,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private func makeWordPathResolution(
         path: String,
         lineNumber: Int?,
+        columnNumber: Int?,
         source: WordPathResolutionSource,
         rawToken: String
     ) -> WordPathResolution {
         WordPathResolution(
             path: path,
             lineNumber: lineNumber,
+            columnNumber: columnNumber,
             source: source,
             rawToken: rawToken
         )
@@ -6540,6 +6544,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                         quicklookResolution = makeWordPathResolution(
                             path: reference.path,
                             lineNumber: reference.lineNumber,
+                            columnNumber: reference.columnNumber,
                             source: .quicklook,
                             rawToken: resolvedQuicklookWord
                         )
@@ -6747,6 +6752,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         return makeWordPathResolution(
             path: resolution.path,
             lineNumber: resolution.lineNumber,
+            columnNumber: resolution.columnNumber,
             source: .snapshot,
             rawToken: resolution.rawToken
         )
@@ -6796,6 +6802,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         return makeWordPathResolution(
             path: resolution.path,
             lineNumber: resolution.lineNumber,
+            columnNumber: resolution.columnNumber,
             source: .snapshot,
             rawToken: resolution.rawToken
         )
@@ -6925,7 +6932,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         if let lineNumber = resolution.lineNumber {
             PreferredEditorService(defaults: .standard).openInEmacs(
                 URL(fileURLWithPath: resolution.path),
-                lineNumber: lineNumber
+                lineNumber: lineNumber,
+                columnNumber: resolution.columnNumber
             )
             return resolution
         }
