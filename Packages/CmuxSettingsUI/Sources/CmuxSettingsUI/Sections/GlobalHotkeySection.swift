@@ -121,9 +121,7 @@ public struct GlobalHotkeySection: View {
     }
 
     private func write(updating shortcut: StoredShortcut) async {
-        var updated = bindings
-        updated[hotkeyAction.rawValue] = shortcut
-        await write(updated)
+        await write(shortcut)
     }
 
     private var currentShortcut: StoredShortcut? {
@@ -154,14 +152,12 @@ public struct GlobalHotkeySection: View {
     }
 
     private func assign(stroke: ShortcutStroke) async {
-        var updated = bindings
-        updated[hotkeyAction.rawValue] = StoredShortcut(first: stroke)
-        await write(updated)
+        await write(StoredShortcut(first: stroke))
     }
 
-    private func write(_ updated: [String: StoredShortcut]) async {
+    private func write(_ shortcut: StoredShortcut) async {
         do {
-            try await jsonStore.set(updated, for: catalog.shortcuts.bindings)
+            try await jsonStore.set(shortcut, for: catalog.shortcuts.binding(for: hotkeyAction))
         } catch {
             errorLog.record(error, keyID: catalog.shortcuts.bindings.id)
         }

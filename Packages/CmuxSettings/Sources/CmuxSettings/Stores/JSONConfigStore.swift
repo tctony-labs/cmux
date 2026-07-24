@@ -242,13 +242,16 @@ public actor JSONConfigStore {
         var root = cacheValid ? cachedRoot : try readFromDisk()
         mutate(&root)
 
-        let parent = fileURL.deletingLastPathComponent()
+        // Atomic replacement must target the symlink destination; writing to the
+        // link path would replace the link itself with a regular file.
+        let writeURL = fileURL.resolvingSymlinksInPath()
+        let parent = writeURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         let data = try JSONSerialization.data(
             withJSONObject: root,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         )
-        try data.write(to: fileURL, options: [.atomic])
+        try data.write(to: writeURL, options: [.atomic])
 
         // Only commit to cache after the file write succeeded.
         cachedRoot = root

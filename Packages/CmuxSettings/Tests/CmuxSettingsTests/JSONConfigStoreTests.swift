@@ -199,11 +199,7 @@ struct JSONConfigStoreTests {
         try Data(payload.utf8).write(to: fileURL)
 
         let focusLeft = StoredShortcut(first: ShortcutStroke(key: "←", command: true, control: true))
-        let focusLeftKey = JSONKey<StoredShortcut>(
-            id: "shortcuts.bindings.focusLeft",
-            defaultValue: .unbound
-        )
-        try await store.set(focusLeft, for: focusLeftKey)
+        try await store.set(focusLeft, for: catalog.shortcuts.binding(for: .focusLeft))
 
         let rawRoot = try JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [String: Any]
         let shortcuts = rawRoot?["shortcuts"] as? [String: Any]

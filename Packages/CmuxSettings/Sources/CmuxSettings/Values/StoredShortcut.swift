@@ -42,7 +42,14 @@ public struct StoredShortcut: Sendable, Equatable, Hashable, Codable, SettingCod
     }
 
     public static func decodeFromJSON(_ raw: Any?) -> StoredShortcut? {
-        guard let raw, !(raw is NSNull) else { return nil }
+        guard let raw else { return nil }
+        if raw is NSNull { return .unbound }
+        if let stroke = raw as? String {
+            return parseConfig(strokes: [stroke])
+        }
+        if let strokes = raw as? [String] {
+            return parseConfig(strokes: strokes)
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: raw, options: .fragmentsAllowed) else {
             return nil
         }
@@ -55,5 +62,30 @@ public struct StoredShortcut: Sendable, Equatable, Hashable, Codable, SettingCod
             return NSNull()
         }
         return object
+    }
+
+    private static func parseConfig(strokes: [String]) -> StoredShortcut? {
+        if strokes.isEmpty { return .unbound }
+        guard strokes.count <= 2 else { return nil }
+        if strokes.count == 1, let rawValue = strokes.first, isUnboundConfigToken(rawValue) {
+            return .unbound
+        }
+
+        let parsedStrokes = strokes.compactMap(ShortcutStroke.parseConfig(_:))
+        guard parsedStrokes.count == strokes.count, let first = parsedStrokes.first else {
+            return nil
+        }
+        return StoredShortcut(first: first, second: parsedStrokes.count == 2 ? parsedStrokes[1] : nil)
+    }
+
+    private static func isUnboundConfigToken(_ rawValue: String) -> Bool {
+        if rawValue.isEmpty { return true }
+        if rawValue == " " { return false }
+        let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return true }
+        return normalized == "none"
+            || normalized == "clear"
+            || normalized == "unbound"
+            || normalized == "disabled"
     }
 }

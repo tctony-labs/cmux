@@ -537,13 +537,11 @@ public struct KeyboardShortcutsSection: View {
             numberedDigitRejections.remove(action.rawValue)
             return
         }
-        var updated = bindings
-        updated[action.rawValue] = proposed
         restoreShortcuts.removeValue(forKey: action.rawValue)
         bareKeyRejections.remove(action.rawValue)
         numberedDigitRejections.remove(action.rawValue)
         conflictRejections.removeValue(forKey: action.rawValue)
-        await write(updated)
+        await write(proposed, for: action)
     }
 
     private func assignChord(_ chord: StoredShortcut, to action: ShortcutAction) async {
@@ -561,14 +559,12 @@ public struct KeyboardShortcutsSection: View {
             numberedDigitRejections.remove(action.rawValue)
             return
         }
-        var updated = bindings
-        updated[action.rawValue] = proposed
         chordModeActions.remove(action.rawValue)
         restoreShortcuts.removeValue(forKey: action.rawValue)
         bareKeyRejections.remove(action.rawValue)
         numberedDigitRejections.remove(action.rawValue)
         conflictRejections.removeValue(forKey: action.rawValue)
-        await write(updated)
+        await write(proposed, for: action)
     }
 
     private func normalizedNumberedShortcutIfNeeded(
@@ -611,29 +607,27 @@ public struct KeyboardShortcutsSection: View {
     }
 
     private func clearBinding(for action: ShortcutAction) async {
-        var updated = bindings
-        updated[action.rawValue] = StoredShortcut.unbound
-        await write(updated)
+        await write(.unbound, for: action)
     }
 
     private func restoreBinding(_ shortcut: StoredShortcut, for action: ShortcutAction) async {
-        var updated = bindings
-        updated[action.rawValue] = shortcut
         restoreShortcuts.removeValue(forKey: action.rawValue)
         bareKeyRejections.remove(action.rawValue)
         numberedDigitRejections.remove(action.rawValue)
         conflictRejections.removeValue(forKey: action.rawValue)
-        await write(updated)
+        await write(shortcut, for: action)
     }
 
     private func resetToDefault(action: ShortcutAction) async {
-        var updated = bindings
-        updated.removeValue(forKey: action.rawValue)
         restoreShortcuts.removeValue(forKey: action.rawValue)
         bareKeyRejections.remove(action.rawValue)
         numberedDigitRejections.remove(action.rawValue)
         conflictRejections.removeValue(forKey: action.rawValue)
-        await write(updated)
+        do {
+            try await jsonStore.reset(catalog.shortcuts.binding(for: action))
+        } catch {
+            errorLog.record(error, keyID: catalog.shortcuts.bindings.id)
+        }
     }
 
     private func resetAll() async {
@@ -641,12 +635,16 @@ public struct KeyboardShortcutsSection: View {
         bareKeyRejections.removeAll()
         numberedDigitRejections.removeAll()
         conflictRejections.removeAll()
-        await write([:])
+        do {
+            try await jsonStore.reset(catalog.shortcuts.bindings)
+        } catch {
+            errorLog.record(error, keyID: catalog.shortcuts.bindings.id)
+        }
     }
 
-    private func write(_ updated: [String: StoredShortcut]) async {
+    private func write(_ shortcut: StoredShortcut, for action: ShortcutAction) async {
         do {
-            try await jsonStore.set(updated, for: catalog.shortcuts.bindings)
+            try await jsonStore.set(shortcut, for: catalog.shortcuts.binding(for: action))
         } catch {
             errorLog.record(error, keyID: catalog.shortcuts.bindings.id)
         }

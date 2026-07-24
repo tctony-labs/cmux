@@ -29,4 +29,15 @@ public struct KeyboardShortcutsCatalogSection: SettingCatalogSection {
     )
 
     public init() {}
+
+    /// Returns the JSON key that manages one shortcut without replacing sibling bindings.
+    ///
+    /// - Parameter action: The shortcut action whose binding should be read or written.
+    /// - Returns: A key rooted at `shortcuts.bindings.<action-id>` with the action's built-in default.
+    public func binding(for action: ShortcutAction) -> JSONKey<StoredShortcut> {
+        JSONKey(
+            id: "\(bindings.id).\(action.rawValue)",
+            defaultValue: action.defaultShortcut ?? .unbound
+        )
+    }
 }
