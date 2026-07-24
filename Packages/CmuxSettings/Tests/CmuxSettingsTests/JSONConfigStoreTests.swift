@@ -143,6 +143,107 @@ struct JSONConfigStoreTests {
         try await store.reset(catalog.app.devWindowDisplay)
         #expect(store.snapshotValue(for: catalog.app.devWindowDisplay) == "")
     }
+
+    @Test func shortcutBindingsDecodeEverySupportedJSONRepresentation() async throws {
+        let (store, fileURL, catalog) = makeStore()
+        let payload = #"""
+        {
+          "shortcuts": {
+            "bindings": {
+              "newTab": "cmd+r",
+              "newSurface": ["ctrl+b", "c"],
+              "renameTab": null,
+              "focusLeft": {
+                "first": {
+                  "key": "h",
+                  "command": true,
+                  "shift": false,
+                  "option": false,
+                  "control": true,
+                  "keyCode": 4
+                }
+              }
+            }
+          }
+        }
+        """#
+        try Data(payload.utf8).write(to: fileURL)
+
+        let bindings = await store.value(for: catalog.shortcuts.bindings)
+
+        #expect(bindings[ShortcutAction.newTab.rawValue] == StoredShortcut(
+            first: ShortcutStroke(key: "r", command: true)
+        ))
+        #expect(bindings[ShortcutAction.newSurface.rawValue] == StoredShortcut(
+            first: ShortcutStroke(key: "b", control: true),
+            second: ShortcutStroke(key: "c")
+        ))
+        #expect(bindings[ShortcutAction.renameTab.rawValue] == .unbound)
+        #expect(bindings[ShortcutAction.focusLeft.rawValue] == StoredShortcut(
+            first: ShortcutStroke(key: "h", command: true, control: true, keyCode: 4)
+        ))
+    }
+
+    @Test func updatingOneShortcutPreservesSiblingsAndReloadsTheNewValue() async throws {
+        let (store, fileURL, catalog) = makeStore()
+        let payload = #"""
+        {
+          "shortcuts": {
+            "bindings": {
+              "newTab": "cmd+r",
+              "renameTab": null
+            }
+          }
+        }
+        """#
+        try Data(payload.utf8).write(to: fileURL)
+
+        let focusLeft = StoredShortcut(first: ShortcutStroke(key: "←", command: true, control: true))
+        let focusLeftKey = JSONKey<StoredShortcut>(
+            id: "shortcuts.bindings.focusLeft",
+            defaultValue: .unbound
+        )
+        try await store.set(focusLeft, for: focusLeftKey)
+
+        let rawRoot = try JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [String: Any]
+        let shortcuts = rawRoot?["shortcuts"] as? [String: Any]
+        let rawBindings = shortcuts?["bindings"] as? [String: Any]
+        #expect(rawBindings?[ShortcutAction.newTab.rawValue] as? String == "cmd+r")
+        #expect(rawBindings?[ShortcutAction.renameTab.rawValue] is NSNull)
+        #expect(rawBindings?[ShortcutAction.focusLeft.rawValue] is [String: Any])
+
+        let reopenedStore = JSONConfigStore(fileURL: fileURL)
+        let reopenedBindings = await reopenedStore.value(for: catalog.shortcuts.bindings)
+        #expect(reopenedBindings[ShortcutAction.newTab.rawValue] == StoredShortcut(
+            first: ShortcutStroke(key: "r", command: true)
+        ))
+        #expect(reopenedBindings[ShortcutAction.renameTab.rawValue] == .unbound)
+        #expect(reopenedBindings[ShortcutAction.focusLeft.rawValue] == focusLeft)
+    }
+
+    @Test func atomicWritePreservesConfigSymlink() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-settings-symlink-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let targetURL = tempDir.appendingPathComponent("linked-settings.json", isDirectory: false)
+        let configURL = tempDir.appendingPathComponent("cmux.json", isDirectory: false)
+        let payload = #"{"app":{"devWindowDisplay":"Old Display"}}"#
+        try Data(payload.utf8).write(to: targetURL)
+        try FileManager.default.createSymbolicLink(
+            atPath: configURL.path,
+            withDestinationPath: targetURL.lastPathComponent
+        )
+
+        let store = JSONConfigStore(fileURL: configURL)
+        let key = JSONKey<String>(id: "app.devWindowDisplay", defaultValue: "")
+        try await store.set("New Display", for: key)
+
+        let linkDestination = try? FileManager.default.destinationOfSymbolicLink(atPath: configURL.path)
+        #expect(linkDestination == targetURL.lastPathComponent)
+        let targetRoot = try JSONSerialization.jsonObject(with: Data(contentsOf: targetURL)) as? [String: Any]
+        let targetApp = targetRoot?["app"] as? [String: Any]
+        #expect(targetApp?["devWindowDisplay"] as? String == "New Display")
+    }
 }
 
 private func withTimeout<T: Sendable>(seconds: Double, _ work: @escaping @Sendable () async -> T) async -> T {
