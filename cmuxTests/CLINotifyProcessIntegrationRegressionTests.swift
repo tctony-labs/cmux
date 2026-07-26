@@ -399,6 +399,63 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         XCTAssertEqual(resumeBindingRequests.first?["auto_resume"] as? Bool, true)
     }
 
+    func testClaudeIdlePromptNotificationDoesNotFlagNeedsInput() throws {
+        let context = try makeClaudeHookContext(name: "claude-idle-prompt")
+        defer { context.cleanup() }
+
+        // Claude Code's 60s composer-idle nudge must not re-flag a workspace the user already read,
+        // and must leave the Idle status the Stop hook wrote in place.
+        let idlePrompt = runClaudeHook(
+            context: context,
+            arguments: ["hooks", "claude", "notification"],
+            standardInput: #"{"session_id":"idle-session","cwd":"\#(context.root.path)","hook_event_name":"Notification","notification_type":"idle_prompt","message":"Claude is waiting for your input"}"#
+        )
+        XCTAssertFalse(idlePrompt.timedOut, idlePrompt.stderr)
+        XCTAssertEqual(idlePrompt.status, 0, idlePrompt.stderr)
+        XCTAssertEqual(idlePrompt.stdout, "OK\n")
+
+        XCTAssertFalse(
+            context.state.commands.contains { $0.hasPrefix("set_status claude_code Needs input ") },
+            "Expected idle_prompt not to overwrite the Idle status, saw \(context.state.commands)"
+        )
+        XCTAssertFalse(
+            context.state.commands.contains { $0.hasPrefix("set_agent_lifecycle claude_code needsInput ") },
+            "Expected idle_prompt not to move the agent lifecycle to needsInput, saw \(context.state.commands)"
+        )
+        XCTAssertFalse(
+            context.state.commands.contains { $0.hasPrefix("notify_target_async ") },
+            "Expected idle_prompt not to post a notification, saw \(context.state.commands)"
+        )
+    }
+
+    func testClaudePermissionNotificationStillFlagsNeedsInput() throws {
+        let context = try makeClaudeHookContext(name: "claude-permission-prompt")
+        defer { context.cleanup() }
+
+        let permission = runClaudeHook(
+            context: context,
+            arguments: ["hooks", "claude", "notification"],
+            standardInput: #"{"session_id":"permission-session","cwd":"\#(context.root.path)","hook_event_name":"Notification","notification_type":"permission_prompt","message":"Claude needs your permission to use Bash"}"#
+        )
+        XCTAssertFalse(permission.timedOut, permission.stderr)
+        XCTAssertEqual(permission.status, 0, permission.stderr)
+
+        XCTAssertTrue(
+            context.state.commands.contains {
+                $0.hasPrefix("set_status claude_code Needs input ") && $0.contains("--tab=\(context.workspaceId)")
+            },
+            "Expected permission_prompt to still flag Needs input, saw \(context.state.commands)"
+        )
+        XCTAssertTrue(
+            context.state.commands.contains { $0.hasPrefix("set_agent_lifecycle claude_code needsInput ") },
+            "Expected permission_prompt to still move the agent lifecycle to needsInput, saw \(context.state.commands)"
+        )
+        XCTAssertTrue(
+            context.state.commands.contains { $0.hasPrefix("notify_target_async ") },
+            "Expected permission_prompt to still post a notification, saw \(context.state.commands)"
+        )
+    }
+
     func testClaudePromptSubmitFromNewSessionCanReplaceStoppedSession() throws {
         let context = try makeClaudeHookContext(name: "claude-new-session-after-stop")
         defer { context.cleanup() }
