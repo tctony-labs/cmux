@@ -7,8 +7,8 @@ import Darwin
 #endif
 
 final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
-    func testClaudeClearSessionStartMarksWorkspaceRunning() throws {
-        let context = try makeClaudeHookContext(name: "claude-clear-running")
+    func testClaudeClearSessionStartMarksWorkspaceIdle() throws {
+        let context = try makeClaudeHookContext(name: "claude-clear-idle")
         defer { context.cleanup() }
 
         let result = runClaudeHook(
@@ -24,12 +24,26 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
             context.state.commands.contains { $0 == "clear_notifications --tab=\(context.workspaceId)" },
             "Expected clear SessionStart to clear stale notifications, saw \(context.state.commands)"
         )
+        // /clear is typed at an idle prompt, and the status only ever moves off
+        // Running when a Stop arrives. No Stop fires until the user asks something
+        // else and that turn finishes, so a Running badge written here outlives the
+        // clear for as long as the user stays away.
         XCTAssertTrue(
             context.state.commands.contains {
-                $0.hasPrefix("set_status claude_code Running --icon=bolt.fill --color=#4C8DFF --tab=\(context.workspaceId)")
+                $0.hasPrefix("set_status claude_code Idle --icon=pause.circle.fill --color=#8E8E93 --tab=\(context.workspaceId)")
                     && $0.contains("--panel=\(context.surfaceId)")
             },
-            "Expected clear SessionStart to mark Claude running, saw \(context.state.commands)"
+            "Expected clear SessionStart to mark Claude idle, saw \(context.state.commands)"
+        )
+        XCTAssertTrue(
+            context.state.commands.contains {
+                $0.hasPrefix("set_agent_lifecycle claude_code idle --tab=\(context.workspaceId)")
+            },
+            "Expected clear SessionStart to report an idle lifecycle, saw \(context.state.commands)"
+        )
+        XCTAssertFalse(
+            context.state.commands.contains { $0.hasPrefix("set_status claude_code Running ") },
+            "Expected clear SessionStart never to claim Claude is running, saw \(context.state.commands)"
         )
     }
 
@@ -338,7 +352,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         )
     }
 
-    func testClaudeStopFromPreviousSessionDoesNotClobberClearRunningStatus() throws {
+    func testClaudeStopFromPreviousSessionDoesNotClobberClearIdleStatus() throws {
         let context = try makeClaudeHookContext(name: "claude-clear-stale-stop")
         defer { context.cleanup() }
 
@@ -374,18 +388,24 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         XCTAssertFalse(staleStop.timedOut, staleStop.stderr)
         XCTAssertEqual(staleStop.status, 0, staleStop.stderr)
 
+        // Both the clear boundary and a Stop write Idle, so the stale Stop cannot be
+        // told apart by the status value alone. It is rejected iff exactly one Idle
+        // write exists (the clear's) and none of the Stop body's side effects ran.
+        let idleStatusWrites = context.state.commands.filter {
+            $0.hasPrefix("set_status claude_code Idle ") && $0.contains("--tab=\(context.workspaceId)")
+        }
+        XCTAssertEqual(
+            idleStatusWrites.count,
+            1,
+            "Expected only the clear SessionStart to write Idle, saw \(context.state.commands)"
+        )
         XCTAssertTrue(
-            context.state.commands.contains {
-                $0.hasPrefix("set_status claude_code Running --icon=bolt.fill --color=#4C8DFF --tab=\(context.workspaceId)")
-                    && $0.contains("--panel=\(context.surfaceId)")
-            },
-            "Expected clear SessionStart to mark Claude running, saw \(context.state.commands)"
+            idleStatusWrites.contains { $0.contains("--panel=\(context.surfaceId)") },
+            "Expected clear SessionStart to mark Claude idle on its own surface, saw \(context.state.commands)"
         )
         XCTAssertFalse(
-            context.state.commands.contains {
-                $0.hasPrefix("set_status claude_code Idle ") && $0.contains("--tab=\(context.workspaceId)")
-            },
-            "Expected stale Stop from old session not to clobber the clear session, saw \(context.state.commands)"
+            context.state.commands.contains { $0.hasPrefix("notify_target_async ") },
+            "Expected stale Stop from old session not to emit its completion notification, saw \(context.state.commands)"
         )
         let resumeBindingRequests = context.state.commands.compactMap { command -> [String: Any]? in
             guard let payload = jsonObject(command),
