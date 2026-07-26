@@ -225,6 +225,9 @@ if [[ "$CMUX_CLAUDE_HOOKS_DISABLED" == "1" ]]; then
     fi
     clear_inherited_claude_auth_selection_env
     REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
+    # User-managed hooks still need the agent PID so `cmux hooks claude` can
+    # register it via set_agent_pid; exec keeps the PID, so $$ is claude's PID.
+    export CMUX_CLAUDE_PID=$$
     exec "$REAL_CLAUDE" "$@"
 fi
 

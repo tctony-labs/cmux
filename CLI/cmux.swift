@@ -25738,13 +25738,21 @@ struct CMUXCLI {
     }
 
     private func claudeAgentPID(from env: [String: String]) -> Int? {
-        guard let raw = env["CMUX_CLAUDE_PID"]?
+        if let raw = env["CMUX_CLAUDE_PID"]?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             let pid = Int(raw),
-            pid > 0 else {
+            pid > 0 {
+            return pid
+        }
+        // Launches that bypass the claude wrapper (user-managed hooks,
+        // IDE spawns, absolute-path invocations) have no CMUX_CLAUDE_PID.
+        // Hooks run as children of the claude process, so fall back to the
+        // nearest non-shell ancestor when it is a claude process.
+        guard let inferred = inferredAgentPID(),
+              nativeAgentProcessKind(for: pid_t(inferred)) == .claude else {
             return nil
         }
-        return pid
+        return inferred
     }
 
     private func shouldSuppressNestedAgentVisibleMutations(
