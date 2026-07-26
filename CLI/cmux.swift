@@ -22615,6 +22615,18 @@ struct CMUXCLI {
 
         case "notification", "notify":
             telemetry.breadcrumb("claude-hook.notification")
+            // Claude Code fires Notification with notification_type "idle_prompt" when the composer
+            // sits untouched past messageIdleNotifThresholdMs (default 60s) after a turn ends. That
+            // is a "you have not typed in a while" nudge, not a request for input: Stop already
+            // wrote Idle plus the completion notification, so acting on it would overwrite that Idle
+            // with "Needs input" and re-flag a workspace the user already finished reading.
+            // Permission prompts and every other notification type stay on the normal path.
+            if let object = parsedInput.object,
+               firstString(in: object, keys: ["notification_type"]) == "idle_prompt" {
+                telemetry.breadcrumb("claude-hook.notification.idle-prompt-skipped")
+                print("OK")
+                return
+            }
             var summary = summarizeClaudeHookNotification(parsedInput: parsedInput)
 
             let mappedSession = parsedInput.sessionId.flatMap { try? sessionStore.lookup(sessionId: $0) }
