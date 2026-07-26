@@ -22382,12 +22382,21 @@ struct CMUXCLI {
                     client: client
                 )
             }
+            // /clear is typed at an idle prompt, so the pane is idle the moment this
+            // fires. Claiming Running here is not a brief inaccuracy: status only
+            // leaves Running when a Stop arrives, and no Stop fires until the user
+            // asks something else and that turn finishes, so a clear-then-walk-away
+            // pins the workspace at Running indefinitely. The clear boundary still
+            // owns the write — the previous session's Idle/Needs input must not
+            // linger into a conversation that no longer exists — it just reports the
+            // truthful resting state. Late Stops from the pre-clear session stay
+            // harmless via the active-session check in `isCurrent`, not via this value.
             if isClearSessionStart, !suppressVisibleMutations {
                 _ = try? sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
                 setAgentLifecycle(
                     client: client,
                     key: Self.claudeCodeStatusKey,
-                    lifecycle: .running,
+                    lifecycle: .idle,
                     workspaceId: workspaceId,
                     surfaceId: surfaceId
                 )
@@ -22395,9 +22404,9 @@ struct CMUXCLI {
                     client: client,
                     workspaceId: workspaceId,
                     surfaceId: surfaceId,
-                    value: "Running",
-                    icon: "bolt.fill",
-                    color: "#4C8DFF",
+                    value: "Idle",
+                    icon: "pause.circle.fill",
+                    color: "#8E8E93",
                     pid: claudePid
                 )
             }
