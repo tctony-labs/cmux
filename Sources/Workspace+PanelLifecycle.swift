@@ -53,6 +53,18 @@ extension Workspace {
         return false
     }
 
+    func hasLiveAgentRuntime(forStatusKey statusKey: String, onPanel panelId: UUID) -> Bool {
+        let keys = agentPIDKeysByPanelId[panelId] ?? []
+        return keys.contains { key in
+            guard agentStatusKey(forAgentPIDKey: key) == statusKey,
+                  let pid = agentPIDs[key],
+                  pid > 0 else {
+                return false
+            }
+            return kill(pid, 0) == 0 || errno == EPERM
+        }
+    }
+
     private func removeAgentPIDOwnership(key: String) {
         if let previousPanelId = agentPIDPanelIdsByKey[key] {
             agentPIDKeysByPanelId[previousPanelId]?.remove(key)

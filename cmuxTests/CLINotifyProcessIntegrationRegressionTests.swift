@@ -21,8 +21,11 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         XCTAssertEqual(result.status, 0, result.stderr)
         XCTAssertEqual(result.stdout, "OK\n")
         XCTAssertTrue(
-            context.state.commands.contains { $0 == "clear_notifications --tab=\(context.workspaceId)" },
-            "Expected clear SessionStart to clear stale notifications, saw \(context.state.commands)"
+            context.state.commands.contains {
+                $0 == "clear_notifications --tab=\(context.workspaceId) --clear-conversation-message"
+            },
+            "Expected clear SessionStart to clear stale notifications and conversation message, " +
+                "saw \(context.state.commands)"
         )
         // /clear is typed at an idle prompt, and the status only ever moves off
         // Running when a Stop arrives. No Stop fires until the user asks something

@@ -11778,6 +11778,7 @@ class TerminalController {
             return "OK"
         }
         let parsed = parseOptions(trimmed)
+        let shouldClearConversationMessage = parsed.options["clear-conversation-message"] != nil
         guard let tabOption = parsed.options["tab"],
               !tabOption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return "ERROR: Usage: clear_notifications [--tab=X] [--panel=ID]"
@@ -11790,6 +11791,31 @@ class TerminalController {
         let panelResolution = parseOptionalPanelIdOption(options: parsed.options, usage: usage)
         if let error = panelResolution.error {
             return error
+        }
+        if shouldClearConversationMessage {
+            let clearBoundary = TerminalMutationBus.shared.markNotificationClearBoundary()
+            TerminalMutationBus.shared.enqueueMainActorMutation { [weak self] in
+                guard let self, let tab = self.resolveSidebarMutationTab(target) else { return }
+                if let panelId = panelResolution.panelId {
+                    guard tab.panels.keys.contains(panelId) else { return }
+                    TerminalMutationBus.shared.discardPendingNotifications(
+                        forTabId: tab.id,
+                        surfaceId: panelId,
+                        through: clearBoundary
+                    )
+                } else {
+                    TerminalMutationBus.shared.discardPendingNotifications(
+                        forTabId: tab.id,
+                        through: clearBoundary
+                    )
+                }
+                tab.clearAgentMessages(
+                    notificationStore: TerminalNotificationStore.shared,
+                    surfaceId: panelResolution.panelId,
+                    discardQueuedNotifications: false
+                )
+            }
+            return "OK"
         }
         if case .workspace(let tabId) = target {
             if let panelId = panelResolution.panelId {

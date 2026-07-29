@@ -22317,7 +22317,7 @@ struct CMUXCLI {
                 env: ProcessInfo.processInfo.environment,
                 fallbackPID: claudePid
             )
-            let isClearSessionStart = isClaudeClearSessionStart(parsedInput)
+            let isClearSessionStart = isAgentClearSessionStart(parsedInput)
             let canReplaceStoppedSession = shouldReplaceStoppedClaudeSession(
                 sessionStore: sessionStore,
                 parsedInput: parsedInput,
@@ -22392,7 +22392,7 @@ struct CMUXCLI {
             // truthful resting state. Late Stops from the pre-clear session stay
             // harmless via the active-session check in `isCurrent`, not via this value.
             if isClearSessionStart, !suppressVisibleMutations {
-                _ = try? sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
+                clearAgentConversationPresentation(client: client, workspaceId: workspaceId)
                 setAgentLifecycle(
                     client: client,
                     key: Self.claudeCodeStatusKey,
@@ -23134,11 +23134,18 @@ struct CMUXCLI {
         }
     }
 
-    private func isClaudeClearSessionStart(_ parsedInput: ClaudeHookParsedInput) -> Bool {
+    private func isAgentClearSessionStart(_ parsedInput: ClaudeHookParsedInput) -> Bool {
         guard let source = parsedInput.object?["source"] as? String else {
             return false
         }
         return source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "clear"
+    }
+
+    private func clearAgentConversationPresentation(client: SocketClient, workspaceId: String) {
+        _ = try? sendV1Command(
+            "clear_notifications --tab=\(workspaceId) --clear-conversation-message",
+            client: client
+        )
     }
 
     private func socketPanelOption(_ surfaceId: String?) -> String {
@@ -29121,6 +29128,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
 
         switch action {
         case .sessionStart:
+            let isCodexClearSessionStart = def.name == "codex" && isAgentClearSessionStart(input)
             let mapped = sessionId.isEmpty ? nil : (try? store.lookup(sessionId: sessionId))
             guard let target = resolveAgentHookTarget(mapped: mapped) else {
                 didSendFeedTelemetry = true
@@ -29159,8 +29167,8 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     transcriptPath: input.transcriptPath ?? mapped?.transcriptPath,
                     pid: pid,
                     launchCommand: launchCommand,
-                    agentLifecycle: .unknown,
-                    runtimeStatus: suppressVisibleMutations ? nil : .running,
+                    agentLifecycle: isCodexClearSessionStart ? .idle : .unknown,
+                    runtimeStatus: suppressVisibleMutations ? nil : (isCodexClearSessionStart ? .idle : .running),
                     updateRuntimeStatus: !suppressVisibleMutations
                 )
                 if suppressVisibleMutations {
@@ -29188,10 +29196,17 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             setAgentLifecycle(
                 client: client,
                 key: def.statusKey,
-                lifecycle: .unknown,
+                lifecycle: isCodexClearSessionStart ? .idle : .unknown,
                 workspaceId: workspaceId,
                 surfaceId: surfaceId
             )
+            if isCodexClearSessionStart, !suppressVisibleMutations {
+                clearAgentConversationPresentation(client: client, workspaceId: workspaceId)
+                setIdleStatusUnlessAnotherSessionIsRunning(
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId
+                )
+            }
 
         case .promptSubmit:
             let mapped = sessionId.isEmpty ? nil : (try? store.lookup(sessionId: sessionId))

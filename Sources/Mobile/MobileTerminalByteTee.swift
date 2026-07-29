@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import CmuxTerminal
+import Darwin
 
 private let mobileTerminalByteTeeLog = Logger(
     subsystem: "dev.cmux",
@@ -101,6 +102,22 @@ final class MobileTerminalByteTee {
         statesBySurfaceID.removeValue(forKey: surfaceID)
     }
 
+    func clearCodexConversationIfNeeded(surfaceID: UUID) {
+        guard let app = AppDelegate.shared,
+              let resolved = app.workspaceContainingPanel(panelId: surfaceID),
+              let notificationStore = app.notificationStore,
+              resolved.workspace.hasLiveAgentRuntime(forStatusKey: "codex", onPanel: surfaceID) else {
+            return
+        }
+        let didClear = resolved.workspace.clearAgentMessages(notificationStore: notificationStore)
+#if DEBUG
+        cmuxDebugLog(
+            "terminal.codex.clear workspace=\(resolved.workspace.id.uuidString.prefix(5)) " +
+                "surface=\(surfaceID.uuidString.prefix(5)) changed=\(didClear ? 1 : 0)"
+        )
+#endif
+    }
+
     private func publishFromMain(surfaceID: UUID, data: Data) {
         var state = statesBySurfaceID[surfaceID] ?? SurfaceState()
         let chunkSeq = state.seq
@@ -146,10 +163,22 @@ public let cmuxMobileTerminalByteTeeCallback: @convention(c) (
 ) -> Void = { userdata, bytes, len in
     guard let userdata, let bytes, len > 0 else { return }
     let box = Unmanaged<MobileTerminalByteTeeUserdata>.fromOpaque(userdata).takeUnretainedValue()
+    let surfaceID = box.surfaceID
     let count = Int(len)
     bytes.withMemoryRebound(to: UInt8.self, capacity: count) { rebound in
         let buffer = UnsafeBufferPointer(start: rebound, count: count)
-        MobileTerminalByteTee.shared.append(surfaceID: box.surfaceID, bytes: buffer)
+        if box.consumeCodexClearSequence(bytes: buffer) {
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    MobileTerminalByteTee.shared.clearCodexConversationIfNeeded(surfaceID: surfaceID)
+                }
+            } else {
+                Task { @MainActor in
+                    MobileTerminalByteTee.shared.clearCodexConversationIfNeeded(surfaceID: surfaceID)
+                }
+            }
+        }
+        MobileTerminalByteTee.shared.append(surfaceID: surfaceID, bytes: buffer)
     }
 }
 
@@ -158,7 +187,54 @@ public let cmuxMobileTerminalByteTeeCallback: @convention(c) (
 /// the `TerminalSurface`; release happens when the surface is freed.
 public final class MobileTerminalByteTeeUserdata {
     public let surfaceID: UUID
+    private var codexClearCSIState = 0
+    private var codexClearPendingByteCount = 0
+
     public init(surfaceID: UUID) {
         self.surfaceID = surfaceID
+    }
+
+    func consumeCodexClearSequence(bytes: UnsafeBufferPointer<UInt8>) -> Bool {
+        guard let baseAddress = bytes.baseAddress, !bytes.isEmpty else { return false }
+        if codexClearCSIState == 0,
+           codexClearPendingByteCount == 0,
+           memchr(baseAddress, 0x1B, bytes.count) == nil {
+            return false
+        }
+        for byte in bytes {
+            if codexClearPendingByteCount > 0 {
+                codexClearPendingByteCount -= 1
+            }
+
+            switch codexClearCSIState {
+            case 0:
+                codexClearCSIState = byte == 0x1B ? 1 : 0
+            case 1:
+                codexClearCSIState = byte == 0x5B ? 2 : (byte == 0x1B ? 1 : 0)
+            case 2:
+                if byte == 0x32 {
+                    codexClearCSIState = 3
+                } else if byte == 0x33 {
+                    codexClearCSIState = 4
+                } else {
+                    codexClearCSIState = byte == 0x1B ? 1 : 0
+                }
+            case 3:
+                if byte == 0x4A {
+                    codexClearPendingByteCount = 64
+                }
+                codexClearCSIState = byte == 0x1B ? 1 : 0
+            case 4:
+                let isCodexClear = byte == 0x4A && codexClearPendingByteCount > 0
+                codexClearCSIState = byte == 0x1B ? 1 : 0
+                if isCodexClear {
+                    codexClearPendingByteCount = 0
+                    return true
+                }
+            default:
+                codexClearCSIState = 0
+            }
+        }
+        return false
     }
 }

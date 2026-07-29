@@ -13,6 +13,108 @@ extension CLINotifyProcessIntegrationRegressionTests {
         let expectedEnvironment: [String: String]?
     }
 
+    func testCodexClearSessionStartClearsConversationAndMarksIdle() throws {
+        let cliPath = try bundledCLIPath()
+        let socketPath = makeSocketPath("codex-clear")
+        let listenerFD = try bindUnixSocket(at: socketPath)
+        let state = MockSocketServerState()
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-codex-clear-\(UUID().uuidString)", isDirectory: true)
+        let workspaceId = "11111111-1111-1111-1111-111111111111"
+        let surfaceId = "22222222-2222-2222-2222-222222222222"
+        let clearSessionId = "codex-clear-session"
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            Darwin.close(listenerFD)
+            unlink(socketPath)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        var environment = ProcessInfo.processInfo.environment
+        environment["HOME"] = root.path
+        environment["PWD"] = root.path
+        environment["CMUX_SOCKET_PATH"] = socketPath
+        environment["CMUX_WORKSPACE_ID"] = workspaceId
+        environment["CMUX_SURFACE_ID"] = surfaceId
+        environment["CMUX_AGENT_HOOK_STATE_DIR"] = root.path
+        environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
+
+        let serverHandler: @Sendable (String) -> String = { line in
+            guard let payload = self.jsonObject(line) else { return "OK" }
+            guard let id = payload["id"] as? String, let method = payload["method"] as? String else {
+                return self.malformedRequestResponse(id: payload["id"] as? String, raw: line)
+            }
+            switch method {
+            case "surface.list":
+                return self.surfaceListResponse(id: id, surfaceId: surfaceId)
+            case "surface.resume.set":
+                return self.v2Response(id: id, ok: true, result: ["ok": true])
+            case "feed.push":
+                return self.v2Response(id: id, ok: true, result: [:])
+            default:
+                return self.v2Response(
+                    id: id,
+                    ok: false,
+                    error: ["code": "unrecognized_method", "message": "unexpected method: \(method)"]
+                )
+            }
+        }
+        for _ in 0..<8 {
+            startDetachedMockServer(listenerFD: listenerFD, state: state, handler: serverHandler)
+        }
+
+        func runCodexHook(subcommand: String, input: String) -> ProcessRunResult {
+            let result = runProcess(
+                executablePath: cliPath,
+                arguments: ["hooks", "codex", subcommand],
+                environment: environment,
+                standardInput: input,
+                timeout: 5
+            )
+            XCTAssertFalse(result.timedOut, result.stderr)
+            XCTAssertEqual(result.status, 0, result.stderr)
+            XCTAssertEqual(result.stdout, "{}\n")
+            return result
+        }
+
+        let clearResult = runCodexHook(
+            subcommand: "session-start",
+            input: #"""
+            {
+              "session_id":"\#(clearSessionId)",
+              "source":"clear",
+              "cwd":"\#(root.path)",
+              "hook_event_name":"SessionStart"
+            }
+            """#
+        )
+
+        XCTAssertEqual(clearResult.status, 0, clearResult.stderr)
+
+        let commands = state.snapshot()
+        XCTAssertTrue(
+            commands.contains {
+                $0 == "clear_notifications --tab=\(workspaceId) --clear-conversation-message"
+            },
+            "Expected Codex clear to clear notifications and conversation message, saw \(commands)"
+        )
+        XCTAssertTrue(
+            commands.contains {
+                $0.hasPrefix("set_agent_lifecycle codex idle --tab=\(workspaceId)")
+                    && $0.contains("--panel=\(surfaceId)")
+            },
+            "Expected Codex clear to report an idle lifecycle, saw \(commands)"
+        )
+        XCTAssertTrue(
+            commands.contains {
+                $0.hasPrefix("set_status codex Idle --icon=pause.circle.fill --color=#8E8E93 --tab=\(workspaceId)")
+                    && $0.contains("--panel=\(surfaceId)")
+            },
+            "Expected Codex clear to mark the pane idle, saw \(commands)"
+        )
+    }
+
     func testGenericHookAgentsPersistSanitizedLaunchCommandsForSessionRestore() throws {
         let scenarios: [GenericHookPersistenceScenario] = [
             GenericHookPersistenceScenario(

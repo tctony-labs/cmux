@@ -5243,6 +5243,43 @@ final class Workspace: Identifiable, ObservableObject {
         return true
     }
 
+    @discardableResult
+    func clearConversationMessages() -> Bool {
+        guard latestConversationMessage != nil || latestSubmittedMessage != nil || latestSubmittedAt != nil else {
+            return false
+        }
+        latestConversationMessage = nil
+        latestSubmittedMessage = nil
+        latestSubmittedAt = nil
+        return true
+    }
+
+    @discardableResult
+    func clearAgentMessages(
+        notificationStore: TerminalNotificationStore,
+        surfaceId: UUID? = nil,
+        discardQueuedNotifications: Bool = true
+    ) -> Bool {
+        let hadNotifications: Bool
+        if let surfaceId {
+            hadNotifications = notificationStore.notifications.contains {
+                $0.matches(tabId: id, surfaceId: surfaceId)
+            }
+            notificationStore.clearNotifications(
+                forTabId: id,
+                surfaceId: surfaceId,
+                discardQueuedNotifications: discardQueuedNotifications
+            )
+        } else {
+            hadNotifications = notificationStore.notifications.contains { $0.tabId == id }
+            notificationStore.clearNotifications(
+                forTabId: id,
+                discardQueuedNotifications: discardQueuedNotifications
+            )
+        }
+        return clearConversationMessages() || hadNotifications
+    }
+
     var isRemoteWorkspace: Bool {
         remoteConfiguration != nil
     }

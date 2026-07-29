@@ -123,6 +123,121 @@ final class TerminalNotificationClearAllTests: XCTestCase {
         XCTAssertEqual(store.notifications.first?.surfaceId, secondPanel.id)
     }
 
+    func testClearNotificationsCommandCanAlsoClearConversationMessage() throws {
+        let store = TerminalNotificationStore.shared
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let manager = TabManager()
+
+        let originalTabManager = appDelegate.tabManager
+        let originalNotificationStore = appDelegate.notificationStore
+        let originalActiveTabManager = TerminalController.shared.activeTabManagerForCallerNotification()
+
+        store.replaceNotificationsForTesting([])
+        appDelegate.tabManager = manager
+        appDelegate.notificationStore = store
+        TerminalController.shared.setActiveTabManager(manager)
+
+        let workspace = manager.addWorkspace(select: true)
+        defer {
+            if manager.tabs.contains(where: { $0.id == workspace.id }) {
+                manager.closeWorkspace(workspace)
+            }
+            store.replaceNotificationsForTesting([])
+            appDelegate.tabManager = originalTabManager
+            appDelegate.notificationStore = originalNotificationStore
+            TerminalController.shared.setActiveTabManager(originalActiveTabManager)
+        }
+
+        XCTAssertTrue(workspace.recordSubmittedMessage("old conversation"))
+        store.addNotification(
+            tabId: workspace.id,
+            surfaceId: workspace.focusedPanelId,
+            title: "Claude Code",
+            subtitle: "Done",
+            body: "Old response"
+        )
+
+        let response = TerminalController.shared.handleSocketLine(
+            "clear_notifications --tab=\(workspace.id.uuidString) --clear-conversation-message"
+        )
+        XCTAssertEqual(response, "OK")
+        TerminalMutationBus.shared.drainForTesting()
+
+        XCTAssertFalse(store.notifications.contains { $0.tabId == workspace.id })
+        XCTAssertNil(workspace.latestConversationMessage)
+        XCTAssertNil(workspace.latestSubmittedMessage)
+        XCTAssertNil(workspace.latestSubmittedAt)
+    }
+
+    func testCodexTerminalClearSequenceClearsConversationImmediately() throws {
+        let store = TerminalNotificationStore.shared
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let manager = TabManager()
+        let originalTabManager = appDelegate.tabManager
+        let originalNotificationStore = appDelegate.notificationStore
+
+        store.replaceNotificationsForTesting([])
+        appDelegate.tabManager = manager
+        appDelegate.notificationStore = store
+        let workspace = manager.addWorkspace(select: true)
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let userdata = Unmanaged.passRetained(MobileTerminalByteTeeUserdata(surfaceID: panelId))
+        defer {
+            userdata.release()
+            if manager.tabs.contains(where: { $0.id == workspace.id }) {
+                manager.closeWorkspace(workspace)
+            }
+            store.replaceNotificationsForTesting([])
+            appDelegate.tabManager = originalTabManager
+            appDelegate.notificationStore = originalNotificationStore
+        }
+
+        func sendTerminalOutput(_ bytes: [UInt8]) {
+            bytes.withUnsafeBufferPointer { buffer in
+                guard let baseAddress = buffer.baseAddress else { return }
+                baseAddress.withMemoryRebound(to: CChar.self, capacity: buffer.count) { pointer in
+                    cmuxMobileTerminalByteTeeCallback(
+                        userdata.toOpaque(),
+                        pointer,
+                        UInt(buffer.count)
+                    )
+                }
+            }
+        }
+
+        XCTAssertTrue(workspace.recordSubmittedMessage("old Codex prompt"))
+        store.addNotification(
+            tabId: workspace.id,
+            surfaceId: panelId,
+            title: "Codex",
+            subtitle: "Done",
+            body: "old Codex response"
+        )
+        XCTAssertNotNil(store.latestNotification(forTabId: workspace.id))
+
+        sendTerminalOutput([0x1B, 0x5B, 0x4A])
+        XCTAssertEqual(workspace.latestConversationMessage, "old Codex prompt")
+
+        sendTerminalOutput([0x1B, 0x5B, 0x32, 0x4A, 0x1B, 0x5B, 0x33, 0x4A])
+        XCTAssertEqual(workspace.latestConversationMessage, "old Codex prompt")
+
+        _ = workspace.recordAgentPID(
+            key: "codex.test-session",
+            pid: getpid(),
+            panelId: panelId,
+            refreshPorts: false
+        )
+
+        sendTerminalOutput([0x1B, 0x5B, 0x32, 0x4A, 0x1B, 0x5B])
+        XCTAssertEqual(workspace.latestConversationMessage, "old Codex prompt")
+
+        sendTerminalOutput([0x33, 0x4A])
+        XCTAssertNil(workspace.latestConversationMessage)
+        XCTAssertNil(workspace.latestSubmittedMessage)
+        XCTAssertNil(workspace.latestSubmittedAt)
+        XCTAssertNil(store.latestNotification(forTabId: workspace.id))
+    }
+
     func testClosingPaneRemovesSurfaceNotificationContribution() throws {
         let store = TerminalNotificationStore.shared
         let appDelegate = AppDelegate.shared ?? AppDelegate()
