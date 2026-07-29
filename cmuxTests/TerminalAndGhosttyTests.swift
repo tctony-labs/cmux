@@ -1048,6 +1048,46 @@ struct TerminalPortalWindowAttachmentRegressionTests {
             "A terminal raised during window attachment should remain above sibling terminals"
         )
     }
+
+    @Test
+    func swiftUIHostAttachmentDefersPortalReparenting() async throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        let surface = TerminalSurface(
+            tabId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        defer { surface.releaseSurfaceForTesting() }
+
+        let hostingView = NSHostingView(rootView: GhosttyTerminalView(
+            terminalSurface: surface,
+            paneId: PaneID(id: UUID())
+        ))
+        let contentView = try #require(window.contentView)
+        hostingView.frame = contentView.bounds
+        contentView.addSubview(hostingView)
+        hostingView.layoutSubtreeIfNeeded()
+
+        #expect(
+            surface.hostedView.superview == nil,
+            "SwiftUI window-attachment callbacks must not reparent terminal views synchronously"
+        )
+
+        await Task.yield()
+
+        #expect(
+            surface.hostedView.superview is WindowTerminalHostView,
+            "The deferred portal bind should reparent the terminal after the SwiftUI attachment turn"
+        )
+    }
 }
 
 @Test @MainActor

@@ -11715,6 +11715,8 @@ struct GhosttyTerminalView: NSViewRepresentable {
         let instanceSerial: UInt64
         private(set) var geometryRevision: UInt64 = 0
         private var lastReportedGeometryState: GeometryState?
+        private var windowAttachmentGeneration: UInt64 = 0
+        private var defersGeometryCallbackForWindowAttachment = false
 
         override init(frame frameRect: NSRect) {
             Self.nextInstanceSerial &+= 1
@@ -11750,18 +11752,32 @@ struct GhosttyTerminalView: NSViewRepresentable {
             )
         }
 
-        private func notifyGeometryChangedIfNeeded() {
+        private func notifyGeometryChangedIfNeeded(forceCallback: Bool = false) {
             let state = currentGeometryState()
-            guard state != lastReportedGeometryState else { return }
-            lastReportedGeometryState = state
-            geometryRevision &+= 1
+            let geometryChanged = state != lastReportedGeometryState
+            if geometryChanged {
+                lastReportedGeometryState = state
+                geometryRevision &+= 1
+            }
+            guard geometryChanged || forceCallback else { return }
+            guard !defersGeometryCallbackForWindowAttachment else { return }
             onGeometryChanged?()
         }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            onDidMoveToWindow?()
-            notifyGeometryChangedIfNeeded()
+            windowAttachmentGeneration &+= 1
+            let generation = windowAttachmentGeneration
+            let attachedWindow = window
+            defersGeometryCallbackForWindowAttachment = true
+            Task { @MainActor [weak self, weak attachedWindow] in
+                guard let self,
+                      self.windowAttachmentGeneration == generation,
+                      self.window === attachedWindow else { return }
+                self.defersGeometryCallbackForWindowAttachment = false
+                self.onDidMoveToWindow?()
+                self.notifyGeometryChangedIfNeeded(forceCallback: true)
+            }
         }
 
         override func viewDidMoveToSuperview() {

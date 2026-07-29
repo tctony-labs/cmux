@@ -1254,7 +1254,7 @@ final class WindowTerminalPortal: NSObject {
 #endif
             // Keep the divider overlay topmost without reinserting it. Reordering an existing
             // overlay during a nested viewDidMoveToWindow callback can invalidate AppKit's index.
-            hostView.addSubview(hostedView, positioned: .below, relativeTo: dividerOverlayView)
+            addPortalSubview(hostedView, to: hostView, positioned: .below, relativeTo: dividerOverlayView)
 #if DEBUG
             hostedSubviewInsertedForTesting?(hostView.subviews.last === dividerOverlayView)
 #endif
@@ -1269,7 +1269,7 @@ final class WindowTerminalPortal: NSObject {
                 "priorityIncreased=\(priorityIncreased ? 1 : 0)"
             )
 #endif
-            hostView.addSubview(hostedView, positioned: .below, relativeTo: dividerOverlayView)
+            addPortalSubview(hostedView, to: hostView, positioned: .below, relativeTo: dividerOverlayView)
 #if DEBUG
             hostedSubviewInsertedForTesting?(hostView.subviews.last === dividerOverlayView)
 #endif
