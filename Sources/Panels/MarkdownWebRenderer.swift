@@ -135,6 +135,7 @@ struct MarkdownWebRenderer: NSViewRepresentable {
         private var lastFontFamily: String = ""
         private var lastFontSize: Double = MarkdownFontSizeSettings.defaultPointSize
         private var lastMaxContentWidth: Double = MarkdownMaxWidthSettings.defaultCSSPixels
+        private var pendingAnchor: String?
         private var isLoaded = false
         private var isShellLoading = false
         private var webContentProcessRecoveryAttempts = 0
@@ -245,6 +246,7 @@ struct MarkdownWebRenderer: NSViewRepresentable {
             webContentProcessRecoveryAttempts = 0
             cancelImageLoads()
             requestedLibs.removeAll()
+            pendingAnchor = nil
         }
 
         func loadShell(theme: MarkdownWebTheme, initialMarkdown: String) {
@@ -359,12 +361,30 @@ struct MarkdownWebRenderer: NSViewRepresentable {
             NSLog("MarkdownPanel.pushMarkdown bytes=\(markdown.utf8.count)")
 #endif
             guard let js = Self.renderMarkdownScript(markdown) else { return }
-            webView.evaluateJavaScript(js) { _, error in
+            webView.evaluateJavaScript(js) { [weak self] _, error in
 #if DEBUG
                 if let error {
                     NSLog("MarkdownPanel: pushMarkdown evaluateJavaScript failed: \(error)")
                 }
 #endif
+                guard error == nil else { return }
+                self?.applyPendingAnchor()
+            }
+        }
+
+        func scrollToAnchor(_ anchor: String) {
+            pendingAnchor = anchor
+            applyPendingAnchor()
+        }
+
+        private func applyPendingAnchor() {
+            guard isLoaded, let webView, let anchor = pendingAnchor else { return }
+            guard let data = try? JSONSerialization.data(withJSONObject: [anchor]),
+                  let arrayLiteral = String(data: data, encoding: .utf8) else { return }
+            let script = "window.__cmuxScrollToAnchor && window.__cmuxScrollToAnchor(\(arrayLiteral)[0]);"
+            webView.evaluateJavaScript(script) { [weak self] result, error in
+                guard error == nil, result as? Bool == true, self?.pendingAnchor == anchor else { return }
+                self?.pendingAnchor = nil
             }
         }
 
@@ -429,9 +449,7 @@ struct MarkdownWebRenderer: NSViewRepresentable {
                     resolveMarkdownFile(rawPath, requestId: requestId)
                 case "openMarkdownFile":
                     guard let rawPath = body["path"] as? String else { return }
-                    if let resolved = resolvedMarkdownFilePath(rawPath) {
-                        openMarkdownFile(resolved)
-                    }
+                    openMarkdownFileLink(rawPath)
                 default:
                     break
                 }
@@ -601,9 +619,17 @@ struct MarkdownWebRenderer: NSViewRepresentable {
             return MarkdownPanelFileLinkResolver.resolve(rawPath: trimmed, relativeToMarkdownFile: filePath)
         }
 
-        private func openMarkdownFile(_ path: String) {
+        func openMarkdownFileLink(_ rawPath: String) {
+            guard let resolved = resolvedMarkdownFilePath(rawPath) else { return }
+            openMarkdownFile(
+                resolved,
+                anchor: MarkdownPanelFileLinkResolver.fragment(from: rawPath)
+            )
+        }
+
+        private func openMarkdownFile(_ path: String, anchor: String?) {
 #if DEBUG
-            NSLog("MarkdownPanel.openMarkdownFile path=\(path)")
+            NSLog("MarkdownPanel.openMarkdownFile path=\(path) anchor=\(anchor ?? "nil")")
 #endif
             guard let app = AppDelegate.shared,
                   let location = app.workspaceContainingPanel(
@@ -611,11 +637,14 @@ struct MarkdownWebRenderer: NSViewRepresentable {
                       preferredWorkspaceId: workspaceId
                   ),
                   let paneId = location.workspace.paneId(forPanelId: panelId) else { return }
-            _ = location.workspace.newMarkdownSurface(
+            let markdownPanel = location.workspace.openOrFocusMarkdownSurface(
                 inPane: paneId,
                 filePath: path,
                 focus: true
             )
+            if let anchor {
+                markdownPanel?.scrollToAnchor(anchor)
+            }
         }
 
         private func handleLibRequest(_ lib: String) {
@@ -782,9 +811,12 @@ struct MarkdownWebRenderer: NSViewRepresentable {
 #endif
             // First preference: links that resolve to local markdown files
             // open as markdown tabs in cmux, not in the browser.
-            let fileCandidate = url.scheme == "file" ? url.path : url.absoluteString
+            let fileCandidate = url.absoluteString
             if let markdownPath = resolvedMarkdownFilePath(fileCandidate) {
-                openMarkdownFile(markdownPath)
+                openMarkdownFile(
+                    markdownPath,
+                    anchor: MarkdownPanelFileLinkResolver.fragment(from: fileCandidate)
+                )
                 return
             }
 

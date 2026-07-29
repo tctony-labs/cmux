@@ -96,6 +96,10 @@ final class MarkdownRendererSession {
     func renderedText() async -> String? {
         await ownedCoordinator.renderedText()
     }
+
+    func scrollToAnchor(_ anchor: String) {
+        ownedCoordinator.scrollToAnchor(anchor)
+    }
 }
 
 extension NSColor {

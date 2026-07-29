@@ -275,6 +275,10 @@ final class MarkdownPanel: Panel, ObservableObject, FilePreviewTextEditingPanel 
         focus()
     }
 
+    func scrollToAnchor(_ anchor: String) {
+        rendererSession.scrollToAnchor(anchor)
+    }
+
     func applySearchNeedle(_ needle: String) {
         let trimmed = needle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

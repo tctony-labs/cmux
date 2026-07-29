@@ -45,6 +45,13 @@ enum MarkdownPanelFileLinkResolver {
         return nil
     }
 
+    static func fragment(from rawPath: String) -> String? {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let hash = trimmed.firstIndex(of: "#") else { return nil }
+        let encodedFragment = String(trimmed[trimmed.index(after: hash)...])
+        return encodedFragment.removingPercentEncoding ?? encodedFragment
+    }
+
     private static func stripFragmentAndQuery(_ rawPath: String) -> String {
         var s = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
         if let hash = s.firstIndex(of: "#") {
