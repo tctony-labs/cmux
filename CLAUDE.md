@@ -256,3 +256,5 @@ Core skill map:
 ```bash
 ./scripts/reload.sh --tag dev
 ```
+
+只有修改会被 `cmux` scheme 编译或打包进 App 的源码、资源或工程配置后，才运行上述 reload。仅修改独立脚本（包括 `build-cmux.sh`）、文档、测试、CI 配置、Agent instructions 或其他不进入 App 构建产物的文件时，不要运行 reload；改用与改动直接相关的最小验证。用户明确要求 reload 时除外。

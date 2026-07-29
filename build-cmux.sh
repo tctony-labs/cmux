@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+BUILD_START_TIME=$(date +%s)
+
+print_elapsed_time() {
+  local status=$?
+  local elapsed=$(( $(date +%s) - BUILD_START_TIME ))
+
+  printf '\n==> Total elapsed time: %02d:%02d:%02d\n' \
+    "$((elapsed / 3600))" \
+    "$(((elapsed % 3600) / 60))" \
+    "$((elapsed % 60))"
+  return "$status"
+}
+
+trap print_elapsed_time EXIT
+
 CMUX_REPO="${CMUX_REPO:-$HOME/Develop/Projects/cmux}"
 DERIVED_DATA="${CMUX_DERIVED_DATA:-$HOME/Library/Developer/Xcode/DerivedData/cmux-release-local}"
 BUNDLE_ID="com.tctony.cmux"
