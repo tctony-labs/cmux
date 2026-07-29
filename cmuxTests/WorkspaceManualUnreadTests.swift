@@ -135,7 +135,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         XCTAssertEqual(store.unreadCount(forTabId: workspace.id), 0)
     }
 
-    func testRestoredPanelUnreadIndicatorMarksWorkspaceUnreadForSidebar() throws {
+    func testRestoredPanelUnreadIndicatorIsNotPersistedAcrossRestart() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let store = TerminalNotificationStore.shared
 
@@ -155,19 +155,19 @@ final class WorkspaceManualUnreadTests: XCTestCase {
 
         let snapshot = source.sessionSnapshot(includeScrollback: false)
         let sourcePanelSnapshot = try XCTUnwrap(snapshot.panels.first { $0.id == sourcePanelId })
-        XCTAssertEqual(sourcePanelSnapshot.hasUnreadIndicator, true)
+        XCTAssertNil(sourcePanelSnapshot.hasUnreadIndicator)
         XCTAssertNil(sourcePanelSnapshot.notifications)
 
         let restored = Workspace()
         restored.restoreSessionSnapshot(snapshot)
 
         let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
-        XCTAssertTrue(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
-        XCTAssertTrue(store.hasPanelDerivedUnread(forTabId: restored.id))
-        XCTAssertEqual(store.unreadCount(forTabId: restored.id), 1)
+        XCTAssertFalse(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
+        XCTAssertFalse(store.hasPanelDerivedUnread(forTabId: restored.id))
+        XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
     }
 
-    func testLegacyRestoredPanelUnreadIndicatorMarksWorkspaceUnreadForSidebar() throws {
+    func testLegacyRestoredPanelUnreadIndicatorIsIgnoredAcrossRestart() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let store = TerminalNotificationStore.shared
 
@@ -187,6 +187,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
 
         var snapshot = source.sessionSnapshot(includeScrollback: false)
         let sourcePanelIndex = try XCTUnwrap(snapshot.panels.firstIndex { $0.id == sourcePanelId })
+        snapshot.panels[sourcePanelIndex].hasUnreadIndicator = true
         snapshot.panels[sourcePanelIndex].restoredUnreadContributesToWorkspace = nil
         XCTAssertEqual(snapshot.panels[sourcePanelIndex].hasUnreadIndicator, true)
         XCTAssertNil(snapshot.panels[sourcePanelIndex].restoredUnreadContributesToWorkspace)
@@ -197,9 +198,9 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         restored.restoreSessionSnapshot(snapshot)
 
         let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
-        XCTAssertTrue(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
-        XCTAssertTrue(store.hasPanelDerivedUnread(forTabId: restored.id))
-        XCTAssertEqual(store.unreadCount(forTabId: restored.id), 1)
+        XCTAssertFalse(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
+        XCTAssertFalse(store.hasPanelDerivedUnread(forTabId: restored.id))
+        XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
     }
 
     func testRestoredUnreadClearsWhenWorkspaceIsExplicitlySelected() throws {
@@ -1699,7 +1700,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         XCTAssertTrue(workspace.manualUnreadPanelIds.contains(splitPanel.id))
     }
 
-    func testSessionRestorePreservesNotificationUnreadIndicator() throws {
+    func testSessionRestoreClearsNotificationUnreadIndicator() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let store = TerminalNotificationStore.shared
         let originalNotificationStore = appDelegate.notificationStore
@@ -1738,8 +1739,8 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
         let restoredTabId = try XCTUnwrap(restored.surfaceIdFromPanelId(restoredPanelId))
         XCTAssertFalse(restored.manualUnreadPanelIds.contains(restoredPanelId))
-        XCTAssertTrue(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
-        XCTAssertTrue(restored.bonsplitController.tab(restoredTabId)?.showsNotificationBadge ?? false)
+        XCTAssertFalse(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
+        XCTAssertFalse(restored.bonsplitController.tab(restoredTabId)?.showsNotificationBadge ?? true)
         XCTAssertFalse(store.hasManualUnread(forTabId: restored.id))
         XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
 
@@ -1751,7 +1752,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
     }
 
-    func testSessionRestorePreservesManualAndNotificationPanelUnreadIndependently() throws {
+    func testSessionRestorePreservesOnlyManualPanelUnread() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let store = TerminalNotificationStore.shared
         let originalNotificationStore = appDelegate.notificationStore
@@ -1788,7 +1789,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
 
         let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
         XCTAssertTrue(restored.manualUnreadPanelIds.contains(restoredPanelId))
-        XCTAssertTrue(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
+        XCTAssertFalse(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
 
         restored.markPanelRead(restoredPanelId)
 
@@ -1796,7 +1797,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         XCTAssertFalse(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
     }
 
-    func testSessionRestorePreservesFocusedReadIndicator() throws {
+    func testSessionRestoreClearsFocusedReadIndicator() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let store = TerminalNotificationStore.shared
         let originalNotificationStore = appDelegate.notificationStore
@@ -1824,8 +1825,8 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
         let restoredTabId = try XCTUnwrap(restored.surfaceIdFromPanelId(restoredPanelId))
         XCTAssertFalse(restored.manualUnreadPanelIds.contains(restoredPanelId))
-        XCTAssertTrue(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
-        XCTAssertTrue(restored.bonsplitController.tab(restoredTabId)?.showsNotificationBadge ?? false)
+        XCTAssertFalse(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
+        XCTAssertFalse(restored.bonsplitController.tab(restoredTabId)?.showsNotificationBadge ?? true)
         XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
 
         restored.markPanelRead(restoredPanelId)
@@ -1835,7 +1836,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
     }
 
-    func testSessionRestorePreservesFocusedReadIndicatorWithReadNotificationsAsVisualOnly() throws {
+    func testSessionRestoreClearsFocusedReadIndicatorWithReadNotifications() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let store = TerminalNotificationStore.shared
         let originalNotificationStore = appDelegate.notificationStore
@@ -1866,10 +1867,9 @@ final class WorkspaceManualUnreadTests: XCTestCase {
 
         let snapshot = workspace.sessionSnapshot(includeScrollback: false)
         let panelSnapshot = try XCTUnwrap(snapshot.panels.first { $0.id == panelId })
-        XCTAssertEqual(panelSnapshot.hasUnreadIndicator, true)
-        XCTAssertEqual(panelSnapshot.restoredUnreadContributesToWorkspace, false)
-        XCTAssertEqual(panelSnapshot.notifications?.count, 1)
-        XCTAssertEqual(panelSnapshot.notifications?.first?.isRead, true)
+        XCTAssertNil(panelSnapshot.hasUnreadIndicator)
+        XCTAssertNil(panelSnapshot.restoredUnreadContributesToWorkspace)
+        XCTAssertNil(panelSnapshot.notifications)
 
         store.replaceNotificationsForTesting([])
         let restored = Workspace()
@@ -1877,14 +1877,25 @@ final class WorkspaceManualUnreadTests: XCTestCase {
 
         let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
         let restoredTabId = try XCTUnwrap(restored.surfaceIdFromPanelId(restoredPanelId))
-        XCTAssertTrue(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
-        XCTAssertTrue(restored.bonsplitController.tab(restoredTabId)?.showsNotificationBadge ?? false)
+        XCTAssertFalse(restored.hasRestoredUnreadIndicator(panelId: restoredPanelId))
+        XCTAssertFalse(restored.bonsplitController.tab(restoredTabId)?.showsNotificationBadge ?? true)
         XCTAssertFalse(store.hasPanelDerivedUnread(forTabId: restored.id))
         XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
 
         var legacySnapshot = snapshot
         let legacyPanelIndex = try XCTUnwrap(legacySnapshot.panels.firstIndex { $0.id == panelId })
+        legacySnapshot.panels[legacyPanelIndex].hasUnreadIndicator = true
         legacySnapshot.panels[legacyPanelIndex].restoredUnreadContributesToWorkspace = nil
+        legacySnapshot.panels[legacyPanelIndex].notifications = [
+            SessionNotificationSnapshot(
+                id: UUID(),
+                title: "Read",
+                subtitle: "",
+                body: "",
+                createdAt: 1_700_000_000,
+                isRead: true
+            )
+        ]
 
         store.replaceNotificationsForTesting([])
         let legacyRestored = Workspace()
@@ -1892,8 +1903,8 @@ final class WorkspaceManualUnreadTests: XCTestCase {
 
         let legacyRestoredPanelId = try XCTUnwrap(legacyRestored.focusedPanelId)
         let legacyRestoredTabId = try XCTUnwrap(legacyRestored.surfaceIdFromPanelId(legacyRestoredPanelId))
-        XCTAssertTrue(legacyRestored.hasRestoredUnreadIndicator(panelId: legacyRestoredPanelId))
-        XCTAssertTrue(legacyRestored.bonsplitController.tab(legacyRestoredTabId)?.showsNotificationBadge ?? false)
+        XCTAssertFalse(legacyRestored.hasRestoredUnreadIndicator(panelId: legacyRestoredPanelId))
+        XCTAssertFalse(legacyRestored.bonsplitController.tab(legacyRestoredTabId)?.showsNotificationBadge ?? true)
         XCTAssertFalse(store.hasPanelDerivedUnread(forTabId: legacyRestored.id))
         XCTAssertEqual(store.unreadCount(forTabId: legacyRestored.id), 0)
     }
@@ -1927,7 +1938,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         XCTAssertEqual(store.unreadCount(forTabId: restored.id), 1)
     }
 
-    func testSessionRestorePreservesWorkspaceNotificationUnreadIndicatorWithoutManualState() throws {
+    func testSessionRestoreClearsWorkspaceNotificationUnreadWithoutManualState() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let store = TerminalNotificationStore.shared
         let originalNotificationStore = appDelegate.notificationStore
@@ -1961,8 +1972,8 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         restored.restoreSessionSnapshot(snapshot)
 
         XCTAssertFalse(store.hasManualUnread(forTabId: restored.id))
-        XCTAssertTrue(store.hasRestoredUnreadIndicator(forTabId: restored.id))
-        XCTAssertEqual(store.unreadCount(forTabId: restored.id), 1)
+        XCTAssertFalse(store.hasRestoredUnreadIndicator(forTabId: restored.id))
+        XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
 
         store.markRead(forTabId: restored.id)
 
@@ -1970,7 +1981,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
     }
 
-    func testSessionRestorePreservesManualAndNotificationWorkspaceUnreadIndependently() throws {
+    func testSessionRestorePreservesOnlyManualWorkspaceUnread() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let store = TerminalNotificationStore.shared
         let originalNotificationStore = appDelegate.notificationStore
@@ -2005,14 +2016,14 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         restored.restoreSessionSnapshot(snapshot)
 
         XCTAssertTrue(store.hasManualUnread(forTabId: restored.id))
-        XCTAssertTrue(store.hasRestoredUnreadIndicator(forTabId: restored.id))
+        XCTAssertFalse(store.hasRestoredUnreadIndicator(forTabId: restored.id))
         XCTAssertEqual(store.unreadCount(forTabId: restored.id), 1)
 
         store.clearManualUnread(forTabId: restored.id)
 
         XCTAssertFalse(store.hasManualUnread(forTabId: restored.id))
-        XCTAssertTrue(store.hasRestoredUnreadIndicator(forTabId: restored.id))
-        XCTAssertEqual(store.unreadCount(forTabId: restored.id), 1)
+        XCTAssertFalse(store.hasRestoredUnreadIndicator(forTabId: restored.id))
+        XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
 
         store.markRead(forTabId: restored.id)
 
@@ -2020,7 +2031,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
         XCTAssertEqual(store.unreadCount(forTabId: restored.id), 0)
     }
 
-    func testSessionAutosaveFingerprintChangesWhenUnreadIndicatorsChange() throws {
+    func testSessionAutosaveFingerprintIncludesOnlyPersistedManualUnreadState() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = TabManager()
         let store = TerminalNotificationStore.shared
@@ -2061,7 +2072,7 @@ final class WorkspaceManualUnreadTests: XCTestCase {
                 isRead: false
             ),
         ])
-        XCTAssertNotEqual(cleanFingerprint, manager.sessionAutosaveFingerprint())
+        XCTAssertEqual(cleanFingerprint, manager.sessionAutosaveFingerprint())
         let notificationWithoutPanelIdFingerprint = manager.sessionAutosaveFingerprint()
 
         store.replaceNotificationsForTesting([
@@ -2077,11 +2088,11 @@ final class WorkspaceManualUnreadTests: XCTestCase {
                 isRead: false
             ),
         ])
-        XCTAssertNotEqual(notificationWithoutPanelIdFingerprint, manager.sessionAutosaveFingerprint())
+        XCTAssertEqual(notificationWithoutPanelIdFingerprint, manager.sessionAutosaveFingerprint())
 
         resetUnreadState()
         store.setFocusedReadIndicator(forTabId: workspace.id, surfaceId: panelId)
-        XCTAssertNotEqual(cleanFingerprint, manager.sessionAutosaveFingerprint())
+        XCTAssertEqual(cleanFingerprint, manager.sessionAutosaveFingerprint())
 
         resetUnreadState()
         store.markUnread(forTabId: workspace.id)
@@ -2093,14 +2104,14 @@ final class WorkspaceManualUnreadTests: XCTestCase {
 
         resetUnreadState()
         workspace.restorePanelUnreadIndicator(panelId)
-        XCTAssertNotEqual(cleanFingerprint, manager.sessionAutosaveFingerprint())
+        XCTAssertEqual(cleanFingerprint, manager.sessionAutosaveFingerprint())
 
         resetUnreadState()
         workspace.restorePanelUnreadIndicator(panelId, contributesToWorkspaceUnread: false)
         let visualOnlyRestoredFingerprint = manager.sessionAutosaveFingerprint()
-        XCTAssertNotEqual(cleanFingerprint, visualOnlyRestoredFingerprint)
+        XCTAssertEqual(cleanFingerprint, visualOnlyRestoredFingerprint)
         workspace.restorePanelUnreadIndicator(panelId, contributesToWorkspaceUnread: true)
-        XCTAssertNotEqual(visualOnlyRestoredFingerprint, manager.sessionAutosaveFingerprint())
+        XCTAssertEqual(visualOnlyRestoredFingerprint, manager.sessionAutosaveFingerprint())
     }
 
     func testShouldShowUnreadIndicatorWhenNotificationIsUnread() {

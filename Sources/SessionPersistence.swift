@@ -1637,6 +1637,7 @@ struct SessionProjectPanelSnapshot: Codable, Sendable {
     }
 }
 
+/// Legacy notification payload retained only so snapshots from older builds remain decodable.
 struct SessionNotificationSnapshot: Codable, Sendable {
     var id: UUID
     var title: String
@@ -1666,35 +1667,6 @@ struct SessionNotificationSnapshot: Codable, Sendable {
         self.paneFlash = paneFlash
         self.clickAction = clickAction
     }
-
-    init(notification: TerminalNotification) {
-        self.init(
-            id: notification.id,
-            title: notification.title,
-            subtitle: notification.subtitle,
-            body: notification.body,
-            createdAt: notification.createdAt.timeIntervalSince1970,
-            isRead: notification.isRead,
-            paneFlash: notification.paneFlash,
-            clickAction: notification.clickAction
-        )
-    }
-
-    func terminalNotification(tabId: UUID, surfaceId: UUID?, panelId: UUID?) -> TerminalNotification {
-        TerminalNotification(
-            id: id,
-            tabId: tabId,
-            surfaceId: surfaceId,
-            panelId: panelId,
-            title: title,
-            subtitle: subtitle,
-            body: body,
-            createdAt: Date(timeIntervalSince1970: createdAt),
-            isRead: isRead,
-            paneFlash: paneFlash ?? true,
-            clickAction: clickAction
-        )
-    }
 }
 
 struct SessionPanelSnapshot: Codable, Sendable {
@@ -1707,6 +1679,7 @@ struct SessionPanelSnapshot: Codable, Sendable {
     var isManuallyUnread: Bool
     var hasUnreadIndicator: Bool? = nil
     var restoredUnreadContributesToWorkspace: Bool? = nil
+    /// Legacy payload accepted during decoding but ignored during restore.
     var notifications: [SessionNotificationSnapshot]? = nil
     var gitBranch: SessionGitBranchSnapshot?
     var listeningPorts: [Int]
@@ -1820,6 +1793,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var groupId: UUID? = nil
     var isManuallyUnread: Bool? = nil
     var hasUnreadIndicator: Bool? = nil
+    /// Legacy payload accepted during decoding but ignored during restore.
     var notifications: [SessionNotificationSnapshot]? = nil
     var terminalScrollBarHidden: Bool?
     var currentDirectory: String

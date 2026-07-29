@@ -119,10 +119,6 @@ extension Workspace {
         }
         let notificationStore = AppDelegate.shared?.notificationStore
         let isWorkspaceManuallyUnread = notificationStore?.hasManualUnread(forTabId: id) ?? false
-        let hasWorkspaceUnreadIndicator =
-            (notificationStore?.hasUnreadNotification(forTabId: id, surfaceId: nil) ?? false) ||
-            (notificationStore?.hasRestoredUnreadIndicator(forTabId: id) ?? false)
-        let workspaceNotificationSnapshots = notificationSnapshots(surfaceId: nil)
 
         return SessionWorkspaceSnapshot(
             workspaceId: id,
@@ -133,8 +129,6 @@ extension Workspace {
             isPinned: isPinned,
             groupId: groupId,
             isManuallyUnread: isWorkspaceManuallyUnread,
-            hasUnreadIndicator: hasWorkspaceUnreadIndicator,
-            notifications: workspaceNotificationSnapshots.isEmpty ? nil : workspaceNotificationSnapshots,
             currentDirectory: currentDirectory,
             focusedPanelId: focusedPanelId,
             layout: layout,
@@ -251,17 +245,7 @@ extension Workspace {
         }
         let isWorkspaceManuallyUnread = snapshot.isManuallyUnread == true
         restoreWorkspaceManualUnread(isWorkspaceManuallyUnread)
-        let restoredNotifications = restoredSessionNotifications(
-            from: snapshot,
-            oldToNewPanelIds: oldToNewPanelIds
-        )
-        let hasUnreadWorkspaceNotification = snapshot.notifications?.contains { !$0.isRead } == true
-        if snapshot.hasUnreadIndicator == true, !hasUnreadWorkspaceNotification {
-            AppDelegate.shared?.notificationStore?.restoreUnreadIndicator(forTabId: id)
-        } else {
-            AppDelegate.shared?.notificationStore?.clearRestoredUnreadIndicator(forTabId: id)
-        }
-        AppDelegate.shared?.notificationStore?.restoreSessionNotifications(restoredNotifications, forTabId: id)
+        AppDelegate.shared?.notificationStore?.clearRestoredUnreadIndicator(forTabId: id)
         syncUnreadBadgeStateForAllPanels()
         return oldToNewPanelIds
     }
@@ -409,20 +393,6 @@ extension Workspace {
         }()
         let isPinned = pinnedPanelIds.contains(panelId)
         let isManuallyUnread = manualUnreadPanelIds.contains(panelId)
-        let panelNotificationSnapshots = notificationSnapshots(surfaceId: panelId)
-        let panelHasUnreadNotification = hasUnreadNotification(panelId: panelId)
-        let hasUnreadIndicator =
-            restoredUnreadPanelIds.contains(panelId) ||
-            hasVisibleNotificationIndicator(panelId: panelId)
-        let restoredUnreadContributesToWorkspace: Bool? = {
-            if let restoredIndicator = restoredUnreadPanelIndicators[panelId] {
-                return restoredIndicator.contributesToWorkspaceUnread
-            }
-            if hasUnreadIndicator && !panelHasUnreadNotification {
-                return false
-            }
-            return nil
-        }()
         let branchSnapshot = panelGitBranches[panelId].map {
             SessionGitBranchSnapshot(branch: $0.branch, isDirty: $0.isDirty)
         }
@@ -605,9 +575,6 @@ extension Workspace {
             directory: directory,
             isPinned: isPinned,
             isManuallyUnread: isManuallyUnread,
-            hasUnreadIndicator: hasUnreadIndicator,
-            restoredUnreadContributesToWorkspace: restoredUnreadContributesToWorkspace,
-            notifications: panelNotificationSnapshots.isEmpty ? nil : panelNotificationSnapshots,
             gitBranch: branchSnapshot,
             listeningPorts: listeningPorts,
             ttyName: ttyName,
@@ -1834,17 +1801,7 @@ extension Workspace {
         } else {
             clearManualUnread(panelId: panelId)
         }
-        let hasUnreadPanelNotification = snapshot.notifications?.contains(where: { !$0.isRead }) == true
-        if snapshot.hasUnreadIndicator == true, !hasUnreadPanelNotification {
-            let contributesToWorkspaceUnread = snapshot.restoredUnreadContributesToWorkspace
-                ?? (snapshot.notifications?.isEmpty ?? true)
-            restorePanelUnreadIndicator(
-                panelId,
-                contributesToWorkspaceUnread: contributesToWorkspaceUnread
-            )
-        } else {
-            clearRestoredUnreadIndicator(panelId: panelId)
-        }
+        clearRestoredUnreadIndicator(panelId: panelId)
 
         if let directory = snapshot.directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
             updatePanelDirectory(panelId: panelId, directory: directory, source: .restoredSnapshotMetadata)
@@ -1892,36 +1849,6 @@ extension Workspace {
             notificationStore.clearManualUnread(forTabId: id)
         }
         syncUnreadBadgeStateForAllPanels()
-    }
-
-    private func notificationSnapshots(surfaceId: UUID?) -> [SessionNotificationSnapshot] {
-        AppDelegate.shared?.notificationStore?
-            .notifications(forTabId: id, surfaceId: surfaceId)
-            .map(SessionNotificationSnapshot.init(notification:)) ?? []
-    }
-
-    private func restoredSessionNotifications(
-        from snapshot: SessionWorkspaceSnapshot,
-        oldToNewPanelIds: [UUID: UUID]
-    ) -> [TerminalNotification] {
-        var notifications = (snapshot.notifications ?? []).map {
-            $0.terminalNotification(tabId: id, surfaceId: nil, panelId: nil)
-        }
-
-        for panelSnapshot in snapshot.panels {
-            guard let newPanelId = oldToNewPanelIds[panelSnapshot.id] else { continue }
-            notifications.append(
-                contentsOf: (panelSnapshot.notifications ?? []).map {
-                    $0.terminalNotification(
-                        tabId: id,
-                        surfaceId: newPanelId,
-                        panelId: newPanelId
-                    )
-                }
-            )
-        }
-
-        return notifications
     }
 
     private func applySessionDividerPositions(
