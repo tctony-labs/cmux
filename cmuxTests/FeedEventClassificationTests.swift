@@ -115,6 +115,21 @@ struct FeedEventClassificationTests {
         #expect(classify("codex", "PermissionRequest", tool: "shell").actionable == false)
     }
 
+    // MARK: Cursor
+
+    @Test func cursorBeforeShellExecutionIsNonBlockingTelemetry() {
+        let toolStart = classify("cursor", "beforeShellExecution")
+        #expect(toolStart.name == "PreToolUse")
+        #expect(toolStart.actionable == false)
+    }
+
+    @Test func cursorLifecycleEventsClassifyCorrectly() {
+        #expect(classify("cursor", "sessionStart").name == "SessionStart")
+        #expect(classify("cursor", "beforeSubmitPrompt").name == "UserPromptSubmit")
+        #expect(classify("cursor", "stop").name == "Stop")
+        #expect(classify("cursor", "sessionEnd").name == "SessionEnd")
+    }
+
     /// Unknown source + unknown event is safe by default.
     @Test func unknownSourceUnknownEventIsSafe() {
         #expect(classify("totally-new-agent", "some_future_event", tool: "Bash").actionable == false)

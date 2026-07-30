@@ -9,6 +9,23 @@ extension CLINotifyProcessIntegrationRegressionTests {
         let timedOut: Bool
     }
 
+    final class ProcessRunResultBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: ProcessRunResult?
+
+        func store(_ result: ProcessRunResult) {
+            lock.lock()
+            value = result
+            lock.unlock()
+        }
+
+        func load() -> ProcessRunResult? {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+    }
+
     final class MockSocketServerState: @unchecked Sendable {
         private let lock = NSLock()
         private(set) var commands: [String] = []

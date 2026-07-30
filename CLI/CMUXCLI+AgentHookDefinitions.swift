@@ -134,7 +134,8 @@ extension CMUXCLI {
     }
 
     enum AgentHookAction {
-        case sessionStart, promptSubmit, stop, notification, approvalResponse, sessionEnd, sessionFinalize, noop
+        case sessionStart, promptSubmit, assistantResponse, stop, notification, approvalResponse
+        case sessionEnd, sessionFinalize, noop
     }
 
     static let subcommandActions: [String: AgentHookAction] = [
@@ -143,7 +144,7 @@ extension CMUXCLI {
         "stop": .stop,
         "notification": .notification,
         "notify": .notification,
-        "agent-response": .stop,
+        "agent-response": .assistantResponse,
         "approval-response": .approvalResponse,
         "shell-exec": .promptSubmit,
         "shell-done": .noop,
@@ -221,13 +222,12 @@ extension CMUXCLI {
             sessionStoreSuffix: "cursor", disableEnvVar: "CMUX_CURSOR_HOOKS_DISABLED",
             hookMarker: "cmux hooks cursor", format: .flat,
             events: [
+                .init(agentEvent: "sessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "beforeSubmitPrompt", cmuxSubcommand: "prompt-submit"),
-                .init(agentEvent: "stop", cmuxSubcommand: "stop"),
                 .init(agentEvent: "afterAgentResponse", cmuxSubcommand: "agent-response"),
-                .init(agentEvent: "beforeShellExecution", cmuxSubcommand: "shell-exec"),
-                .init(agentEvent: "afterShellExecution", cmuxSubcommand: "shell-done"),
-            ],
-            feedHookEvents: ["beforeShellExecution"]
+                .init(agentEvent: "stop", cmuxSubcommand: "stop"),
+                .init(agentEvent: "sessionEnd", cmuxSubcommand: "session-end"),
+            ]
         ),
         AgentHookDef(
             name: "gemini", displayName: "Gemini", statusKey: "gemini",
@@ -391,7 +391,18 @@ extension CMUXCLI {
             return pinnedAgentHookShellCommand(command, for: def)
         }
         let routedArguments = command.hasPrefix("cmux ") ? String(command.dropFirst("cmux ".count)) : command
-        return "cmux_cli=\"${CMUX_BUNDLED_CLI_PATH:-}\"; if [ -z \"$cmux_cli\" ] || [ ! -x \"$cmux_cli\" ]; then cmux_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi; if [ -n \"$CMUX_SURFACE_ID\" ] && [ \"$\(def.disableEnvVar)\" != \"1\" ] && [ -n \"$cmux_cli\" ]; then { if [ -n \"${CMUX_SOCKET_PATH:-}\" ]; then \"$cmux_cli\" --socket \"$CMUX_SOCKET_PATH\" \(routedArguments); else \"$cmux_cli\" \(routedArguments); fi; } || echo '{}'; else echo '{}'; fi"
+        let routingContext = def.name == "cursor"
+            ? "{ [ -n \"${CMUX_SURFACE_ID:-}\" ] || [ -n \"${CMUX_SOCKET_PATH:-}\" ]; }"
+            : "[ -n \"${CMUX_SURFACE_ID:-}\" ]"
+        let resolveCLI = "cmux_cli=\"${CMUX_BUNDLED_CLI_PATH:-}\"; "
+            + "if [ -z \"$cmux_cli\" ] || [ ! -x \"$cmux_cli\" ]; then "
+            + "cmux_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi"
+        let invoke = "if [ -n \"${CMUX_SOCKET_PATH:-}\" ]; then "
+            + "\"$cmux_cli\" --socket \"$CMUX_SOCKET_PATH\" \(routedArguments); "
+            + "else \"$cmux_cli\" \(routedArguments); fi"
+        let dispatch = "if \(routingContext) && [ \"${\(def.disableEnvVar):-}\" != \"1\" ] "
+            + "&& [ -n \"$cmux_cli\" ]; then { \(invoke); } || echo '{}'; else echo '{}'; fi"
+        return "\(resolveCLI); \(dispatch)"
     }
 
     private static func exitTwoPropagatingAgentHookShellCommand(_ command: String, for def: AgentHookDef) -> String {

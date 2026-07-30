@@ -22604,7 +22604,11 @@ struct CMUXCLI {
                     launchCommand: mappedSession?.launchCommand ?? firstSightingLaunchCommand
                 )
             }
-            _ = try sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
+            try clearAgentSurfaceNotifications(
+                client: client,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId
+            )
             setAgentLifecycle(
                 client: client,
                 key: Self.claudeCodeStatusKey,
@@ -22920,7 +22924,11 @@ struct CMUXCLI {
                     agentLifecycle: .running
                 )
             }
-            _ = try? sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
+            try? clearAgentSurfaceNotifications(
+                client: client,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId
+            )
             setAgentLifecycle(
                 client: client,
                 key: Self.claudeCodeStatusKey,
@@ -23144,6 +23152,17 @@ struct CMUXCLI {
     private func clearAgentConversationPresentation(client: SocketClient, workspaceId: String) {
         _ = try? sendV1Command(
             "clear_notifications --tab=\(workspaceId) --clear-conversation-message",
+            client: client
+        )
+    }
+
+    private func clearAgentSurfaceNotifications(
+        client: SocketClient,
+        workspaceId: String,
+        surfaceId: String?
+    ) throws {
+        _ = try sendV1Command(
+            "clear_notifications --tab=\(workspaceId)\(socketPanelOption(surfaceId))",
             client: client
         )
     }
@@ -23901,6 +23920,13 @@ struct CMUXCLI {
         guard let message else { return nil }
         let normalized = normalizedSingleLine(message)
         return normalized.isEmpty ? nil : normalized
+    }
+
+    private func cursorAssistantMessageFromHookPayload(_ object: [String: Any]?) -> String? {
+        guard let message = firstString(in: object ?? [:], keys: ["text"]) else { return nil }
+        let normalized = normalizedSingleLine(message)
+        guard !normalized.isEmpty else { return nil }
+        return truncate(normalized, maxLength: 200)
     }
 
     private struct TranscriptSummary {
@@ -29128,7 +29154,11 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
 
         switch action {
         case .sessionStart:
-            let isCodexClearSessionStart = def.name == "codex" && isAgentClearSessionStart(input)
+            // Cursor starts a fresh, idle conversation for both initial launch and
+            // `/clear`, but its sessionStart payload has no Claude-style `source`.
+            // Treat every fresh Cursor session as a presentation clear boundary.
+            let isClearBoundarySessionStart = (def.name == "codex" && isAgentClearSessionStart(input))
+                || def.name == "cursor"
             let mapped = sessionId.isEmpty ? nil : (try? store.lookup(sessionId: sessionId))
             guard let target = resolveAgentHookTarget(mapped: mapped) else {
                 didSendFeedTelemetry = true
@@ -29167,8 +29197,8 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     transcriptPath: input.transcriptPath ?? mapped?.transcriptPath,
                     pid: pid,
                     launchCommand: launchCommand,
-                    agentLifecycle: isCodexClearSessionStart ? .idle : .unknown,
-                    runtimeStatus: suppressVisibleMutations ? nil : (isCodexClearSessionStart ? .idle : .running),
+                    agentLifecycle: isClearBoundarySessionStart ? .idle : .unknown,
+                    runtimeStatus: suppressVisibleMutations ? nil : (isClearBoundarySessionStart ? .idle : .running),
                     updateRuntimeStatus: !suppressVisibleMutations
                 )
                 if suppressVisibleMutations {
@@ -29196,11 +29226,16 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             setAgentLifecycle(
                 client: client,
                 key: def.statusKey,
-                lifecycle: isCodexClearSessionStart ? .idle : .unknown,
+                lifecycle: isClearBoundarySessionStart ? .idle : .unknown,
                 workspaceId: workspaceId,
                 surfaceId: surfaceId
             )
-            if isCodexClearSessionStart, !suppressVisibleMutations {
+            if isClearBoundarySessionStart, !suppressVisibleMutations {
+                try? clearAgentSurfaceNotifications(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId
+                )
                 clearAgentConversationPresentation(client: client, workspaceId: workspaceId)
                 setIdleStatusUnlessAnotherSessionIsRunning(
                     workspaceId: workspaceId,
@@ -29297,6 +29332,19 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     runtimeStatus: .running,
                     updateRuntimeStatus: true
                 )
+                if def.name == "cursor" {
+                    try? store.markNotificationResolved(
+                        sessionId: sessionId,
+                        workspaceId: workspaceId,
+                        surfaceId: surfaceId,
+                        cwd: hookCwd ?? mapped?.cwd,
+                        transcriptPath: input.transcriptPath ?? mapped?.transcriptPath,
+                        pid: pid,
+                        launchCommand: launchCommand ?? mapped?.launchCommand,
+                        agentLifecycle: .running,
+                        runtimeStatus: .running
+                    )
+                }
                 try? store.clearNotificationEmission(sessionId: sessionId)
                 publishAgentSurfaceResumeBinding(
                     client: client,
@@ -29323,9 +29371,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     workspaceId: workspaceId,
                     surfaceId: surfaceId
                 )
-                _ = try? sendV1Command(
-                    "clear_notifications --tab=\(workspaceId)\(socketPanelOption(surfaceId))",
-                    client: client
+                try? clearAgentSurfaceNotifications(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId
                 )
                 let runningStatus = String(localized: "agent.generic.status.running", defaultValue: "Running")
                 _ = try sendV1Command(
@@ -29368,6 +29417,31 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     telemetry: telemetry
                 )
             }
+
+        case .assistantResponse:
+            let mapped = sessionId.isEmpty ? nil : (try? store.lookup(sessionId: sessionId))
+            guard let target = resolveAgentHookTarget(mapped: mapped) else {
+                didSendFeedTelemetry = true
+                print("{}")
+                return
+            }
+            if def.name == "cursor",
+               !sessionId.isEmpty,
+               let assistantMessage = cursorAssistantMessageFromHookPayload(input.object) {
+                // Cursor dispatches stop and afterAgentResponse concurrently. Persist the response
+                // before Feed telemetry so stop can observe it while its own telemetry is in flight.
+                try? store.upsert(
+                    sessionId: sessionId,
+                    workspaceId: target.workspaceId,
+                    surfaceId: target.surfaceId,
+                    cwd: hookCwd ?? mapped?.cwd,
+                    transcriptPath: input.transcriptPath ?? mapped?.transcriptPath,
+                    pid: mapped?.pid ?? inferredPID,
+                    launchCommand: mapped?.launchCommand,
+                    lastBody: assistantMessage
+                )
+            }
+            sendAgentFeedTelemetryUnlessSuppressed(workspaceId: target.workspaceId)
 
         case .stop:
             if def.name == "codex", !sessionId.isEmpty {
@@ -29416,6 +29490,30 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 )
                 return summary.status == .error ? summary : nil
             }()
+            let cursorStopStatus: String? = {
+                guard def.name == "cursor", let rawObject = input.rawObject else { return nil }
+                return firstString(in: rawObject, keys: ["status"])?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+            }()
+            let cursorFailure: AgentHookNotificationSummary? = {
+                guard cursorStopStatus == "error", let rawObject = input.rawObject else { return nil }
+                guard let message = firstString(
+                    in: rawObject,
+                    keys: ["error", "message", "description"]
+                ) else { return nil }
+                return classifyAgentHookNotification(
+                    def: def,
+                    signal: cursorStopStatus ?? "error",
+                    message: message,
+                    isFallback: false
+                )
+            }()
+            // Cursor currently reports both `/clear` and Esc interruption as
+            // status=error without an error detail. Its StopRequest schema has
+            // no error-message field, so a detail-free error is not actionable.
+            let cursorStopWasInterrupted = cursorStopStatus == "aborted"
+                || (cursorStopStatus == "error" && cursorFailure == nil)
 
             let cwd = hookCwd ?? mapped?.cwd
             let grokAssistantMessage: String? = {
@@ -29426,19 +29524,34 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     env: env
                 )
             }()
-            let lastMsg = claudeAssistantMessageFromHookPayload(input.object)
+            let cursorAssistantMessage: String? = {
+                guard def.name == "cursor", !sessionId.isEmpty else { return nil }
+                let attemptCount = cursorStopStatus == "completed" ? 11 : 1
+                for attempt in 0..<attemptCount {
+                    if let message = (try? store.lookup(sessionId: sessionId))?.lastBody,
+                       !message.isEmpty {
+                        return message
+                    }
+                    if attempt + 1 < attemptCount {
+                        usleep(20_000)
+                    }
+                }
+                return nil
+            }()
+            let lastMsg = claudeAssistantMessageFromHookPayload(input.object) ?? cursorAssistantMessage
             let projectName: String? = {
                 guard let cwd, !cwd.isEmpty else { return nil }
                 return URL(fileURLWithPath: NSString(string: cwd).expandingTildeInPath).lastPathComponent
             }()
-            var subtitle = codexFailure?.subtitle ?? String(
+            var subtitle = codexFailure?.subtitle ?? cursorFailure?.subtitle ?? String(
                 localized: "agent.codex.completion.subtitle.completed",
                 defaultValue: "Completed"
             )
             if let antigravityFailure {
                 subtitle = antigravityFailure.subtitle
             }
-            if codexFailure == nil, antigravityFailure == nil, let projectName, !projectName.isEmpty {
+            if codexFailure == nil, cursorFailure == nil, antigravityFailure == nil,
+               let projectName, !projectName.isEmpty {
                 subtitle = String.localizedStringWithFormat(
                     String(
                         localized: "agent.codex.completion.subtitle.completedInProject",
@@ -29448,6 +29561,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 )
             }
             let body = codexFailure?.body
+                ?? cursorFailure?.body
                 ?? antigravityFailure?.body
                 ?? lastMsg.map { truncate(normalizedSingleLine($0), maxLength: 200) }
                 ?? grokAssistantMessage.map { truncate(normalizedSingleLine($0), maxLength: 200) }
@@ -29459,7 +29573,9 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     def.displayName
             )
             let antigravityHasActiveBackgroundWork = hasActiveAntigravityBackgroundWork()
-            let stopNotificationStatus: AgentHookNotificationStatus = (codexFailure == nil && antigravityFailure == nil) ? .idle : .error
+            let stopNotificationStatus: AgentHookNotificationStatus = (
+                codexFailure == nil && cursorFailure == nil && antigravityFailure == nil
+            ) ? .idle : .error
             let lifecycleAfterStop: AgentHibernationLifecycleState = {
                 if antigravityHasActiveBackgroundWork && stopNotificationStatus == .idle {
                     return .running
@@ -29562,7 +29678,8 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             let shouldPublishGrokStopFallbackNotification = def.name == "grok"
                 && stopNotificationStatus == .idle
                 && (grokAssistantMessage != nil || !hasGrokTranscriptContext)
-            let shouldPublishStopAlert = (shouldPublishStopNotification || shouldPublishGrokStopFallbackNotification)
+            let shouldPublishStopAlert = !cursorStopWasInterrupted
+                && (shouldPublishStopNotification || shouldPublishGrokStopFallbackNotification)
                 && !suppressCompletionNotification
             if suppressVisibleMutations {
                 telemetry.breadcrumb(
@@ -29624,7 +29741,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                         "set_status \(def.statusKey) \(codexFailure.statusValue) --icon=exclamationmark.triangle.fill --color=#FF453A --priority=100 --tab=\(workspaceId)\(socketPanelOption(surfaceId))",
                         client: client
                     )
-                } else if antigravityFailure != nil {
+                } else if cursorFailure != nil || antigravityFailure != nil {
                     setAgentLifecycle(
                         client: client,
                         key: def.statusKey,
@@ -29720,9 +29837,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     workspaceId: workspaceId,
                     surfaceId: surfaceId
                 )
-                _ = try? sendV1Command(
-                    "clear_notifications --tab=\(workspaceId)\(socketPanelOption(surfaceId))",
-                    client: client
+                try? clearAgentSurfaceNotifications(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId
                 )
                 let runningStatus = String(localized: "agent.generic.status.running", defaultValue: "Running")
                 _ = try? sendV1Command(
@@ -30227,6 +30345,9 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
            let pid = Int(rawPid),
            pid > 0 {
             return pid
+        }
+        if source == "cursor" {
+            return inferredAgentPID() ?? Int(getppid())
         }
         return Int(getppid())
     }
@@ -32018,9 +32139,14 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             throw CLIError(message: "cmux hooks feed requires --source <agent-name>")
         }
 
-        // Outside a cmux terminal (no CMUX_SURFACE_ID) → silently no-op.
-        // Also matches the graceful-fallback pattern of the other hooks.
-        guard ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]?.isEmpty == false else {
+        let env = ProcessInfo.processInfo.environment
+        // Cursor CLI can retain the cmux socket while omitting workspace/surface
+        // variables. Its lifecycle hook resolves the target through the caller's
+        // TTY/PID, and the Feed can resolve the resulting session record, so do not
+        // discard Cursor approval events merely because CMUX_SURFACE_ID is absent.
+        let hasSurfaceContext = env["CMUX_SURFACE_ID"]?.isEmpty == false
+        let cursorHasSocketContext = source == "cursor" && env["CMUX_SOCKET_PATH"]?.isEmpty == false
+        guard hasSurfaceContext || cursorHasSocketContext else {
             print("{}")
             return
         }
@@ -32044,6 +32170,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         let toolCall = stdinObj["toolCall"] as? [String: Any]
         let toolName = firstString(in: stdinObj, keys: ["tool_name", "toolName"])
             ?? toolCall.flatMap { firstString(in: $0, keys: ["name"]) }
+            ?? (source == "cursor" && rawEvent == "beforeShellExecution" ? "Shell" : nil)
             ?? ""
 
         // Decide whether this event is Feed-actionable. Non-actionable
@@ -32054,7 +32181,6 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             event: rawEvent,
             toolName: toolName
         )
-        let env = ProcessInfo.processInfo.environment
         if Self.shouldSuppressKiroFeedEvent(
             source: source,
             hookEventName: hookEventName,
@@ -32086,7 +32212,21 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         if let workspaceId = feedWorkspaceId(rawObject: stdinObj, fallback: env["CMUX_WORKSPACE_ID"]) {
             eventDict["workspace_id"] = workspaceId
         }
-        let toolInput = stdinObj["tool_input"] ?? stdinObj["toolInput"] ?? toolCall?["args"]
+        let cursorShellInput: [String: Any]? = {
+            guard source == "cursor", rawEvent == "beforeShellExecution",
+                  let command = firstString(in: stdinObj, keys: ["command"]) else {
+                return nil
+            }
+            var input: [String: Any] = ["command": command]
+            if let cwd = firstString(in: stdinObj, keys: ["cwd"]) {
+                input["cwd"] = cwd
+            }
+            return input
+        }()
+        let toolInput: Any? = stdinObj["tool_input"]
+            ?? stdinObj["toolInput"]
+            ?? toolCall?["args"]
+            ?? cursorShellInput
         if let cwd = firstString(in: stdinObj, keys: ["cwd", "working_directory", "workingDirectory"])
             ?? firstWorkspacePath(in: stdinObj)
             ?? (toolInput as? [String: Any]).flatMap({ firstString(in: $0, keys: ["Cwd", "cwd"]) }) {

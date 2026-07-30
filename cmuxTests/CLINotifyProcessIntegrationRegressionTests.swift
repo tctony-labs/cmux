@@ -90,6 +90,58 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         )
     }
 
+    func testClaudePromptSubmitClearsOnlyCurrentPanelNotification() throws {
+        let context = try makeClaudeHookContext(name: "claude-prompt-clear-scope")
+        defer { context.cleanup() }
+        startAgentHookMockServerAccepting(context: context, connectionLimit: 32)
+
+        let sessionId = "claude-panel-clear"
+        let start = runAgentHook(
+            context: context,
+            agent: "claude",
+            subcommand: "session-start",
+            standardInput: #"""
+            {
+              "session_id":"\#(sessionId)",
+              "source":"clear",
+              "cwd":"\#(context.root.path)",
+              "hook_event_name":"SessionStart"
+            }
+            """#
+        )
+        XCTAssertFalse(start.timedOut, start.stderr)
+        XCTAssertEqual(start.status, 0, start.stderr)
+
+        let commandStart = context.state.commands.count
+        let prompt = runAgentHook(
+            context: context,
+            agent: "claude",
+            subcommand: "prompt-submit",
+            standardInput: #"""
+            {
+              "session_id":"\#(sessionId)",
+              "turn_id":"turn-1",
+              "cwd":"\#(context.root.path)",
+              "hook_event_name":"UserPromptSubmit"
+            }
+            """#
+        )
+        XCTAssertFalse(prompt.timedOut, prompt.stderr)
+        XCTAssertEqual(prompt.status, 0, prompt.stderr)
+
+        let commands = Array(context.state.commands.dropFirst(commandStart))
+        XCTAssertTrue(
+            commands.contains {
+                $0 == "clear_notifications --tab=\(context.workspaceId) --panel=\(context.surfaceId)"
+            },
+            "Expected Claude prompt to clear only its own panel notification, saw \(commands)"
+        )
+        XCTAssertFalse(
+            commands.contains { $0 == "clear_notifications --tab=\(context.workspaceId)" },
+            "Claude prompt must not clear sibling panel notifications, saw \(commands)"
+        )
+    }
+
     func testClaudePreToolUseFeedContextReadsOnlyRecentTranscriptTail() throws {
         let context = try makeClaudeHookContext(name: "claude-pretool-tail")
         defer { context.cleanup() }

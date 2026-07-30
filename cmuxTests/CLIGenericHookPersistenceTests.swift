@@ -115,6 +115,471 @@ extension CLINotifyProcessIntegrationRegressionTests {
         )
     }
 
+    func testCursorHookInstallUsesCurrentLifecycleEventsAndDispatchesWithSocketOnly() throws {
+        let cliPath = try bundledCLIPath()
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-cursor-hook-install-\(UUID().uuidString)", isDirectory: true)
+        let cursorConfigDirectory = root.appendingPathComponent(".cursor", isDirectory: true)
+        try FileManager.default.createDirectory(at: cursorConfigDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let hookURL = cursorConfigDirectory.appendingPathComponent("hooks.json", isDirectory: false)
+        let staleConfig: [String: Any] = [
+            "version": 1,
+            "hooks": [
+                "beforeShellExecution": [[
+                    "command": "cmux hooks feed --source cursor --event beforeShellExecution",
+                ]],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: staleConfig, options: [.prettyPrinted])
+            .write(to: hookURL, options: .atomic)
+
+        let install = runProcess(
+            executablePath: cliPath,
+            arguments: ["hooks", "cursor", "install", "--yes"],
+            environment: [
+                "HOME": root.path,
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "CMUX_BUNDLED_CLI_PATH": cliPath,
+                "CMUX_CLI_SENTRY_DISABLED": "1",
+            ],
+            timeout: 5
+        )
+        XCTAssertFalse(install.timedOut, install.stderr)
+        XCTAssertEqual(install.status, 0, install.stderr)
+
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: hookURL)) as? [String: Any])
+        let hooks = try XCTUnwrap(json["hooks"] as? [String: Any])
+        XCTAssertNotNil(hooks["sessionStart"])
+        XCTAssertNotNil(hooks["beforeSubmitPrompt"])
+        XCTAssertNotNil(hooks["afterAgentResponse"])
+        XCTAssertNotNil(hooks["stop"])
+        XCTAssertNotNil(hooks["sessionEnd"])
+        XCTAssertNil(hooks["afterShellExecution"])
+        XCTAssertNil(hooks["beforeShellExecution"])
+
+        let sessionStartEntries = try XCTUnwrap(hooks["sessionStart"] as? [[String: Any]])
+        let sessionStartCommand = try XCTUnwrap(sessionStartEntries.first?["command"] as? String)
+        let socketPath = makeSocketPath("cursor-socket-only")
+        let listenerFD = try bindUnixSocket(at: socketPath)
+        let state = MockSocketServerState()
+        let workspaceId = "11111111-1111-1111-1111-111111111111"
+        let surfaceId = "22222222-2222-2222-2222-222222222222"
+        defer {
+            Darwin.close(listenerFD)
+            unlink(socketPath)
+        }
+
+        let serverHandler: @Sendable (String) -> String = { line in
+            guard let payload = self.jsonObject(line),
+                  let id = payload["id"] as? String,
+                  let method = payload["method"] as? String else {
+                return "OK"
+            }
+            switch method {
+            case "surface.list":
+                return self.surfaceListResponse(id: id, surfaceId: surfaceId)
+            case "surface.resume.set", "feed.push":
+                return self.v2Response(id: id, ok: true, result: ["ok": true])
+            default:
+                return self.v2Response(id: id, ok: true, result: [:])
+            }
+        }
+        for _ in 0..<12 {
+            startDetachedMockServer(listenerFD: listenerFD, state: state, handler: serverHandler)
+        }
+
+        let hookResult = runProcess(
+            executablePath: "/bin/sh",
+            arguments: ["-c", sessionStartCommand],
+            environment: [
+                "HOME": root.path,
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "PWD": root.path,
+                "CMUX_BUNDLED_CLI_PATH": cliPath,
+                "CMUX_SOCKET_PATH": socketPath,
+                "CMUX_WORKSPACE_ID": workspaceId,
+                "CMUX_AGENT_HOOK_STATE_DIR": root.path,
+                "CMUX_CLI_SENTRY_DISABLED": "1",
+            ],
+            standardInput: #"{"conversation_id":"cursor-session","hook_event_name":"sessionStart"}"#,
+            timeout: 5
+        )
+        XCTAssertFalse(hookResult.timedOut, hookResult.stderr)
+        XCTAssertEqual(hookResult.status, 0, hookResult.stderr)
+
+        let commands = state.snapshot()
+        XCTAssertTrue(
+            commands.contains("clear_notifications --tab=\(workspaceId) --panel=\(surfaceId)"),
+            "Expected socket-only Cursor sessionStart to clear its panel notification, saw \(commands)"
+        )
+        XCTAssertTrue(
+            commands.contains("clear_notifications --tab=\(workspaceId) --clear-conversation-message"),
+            "Expected socket-only Cursor sessionStart to reach cmux and clear presentation, saw \(commands)"
+        )
+        XCTAssertTrue(
+            commands.contains {
+                $0.hasPrefix("set_status cursor Idle --icon=pause.circle.fill --color=#8E8E93")
+            },
+            "Expected fresh Cursor session to be idle, saw \(commands)"
+        )
+    }
+
+    func testCursorBeforeShellFeedIsNonBlockingTelemetry() throws {
+        func runCursorEvent() throws -> (ProcessRunResult, [[String: Any]]) {
+            let cliPath = try bundledCLIPath()
+            let socketPath = makeSocketPath("cursor-feed")
+            let listenerFD = try bindUnixSocket(at: socketPath)
+            let state = MockSocketServerState()
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("cmux-cursor-feed-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer {
+                Darwin.close(listenerFD)
+                unlink(socketPath)
+                try? FileManager.default.removeItem(at: root)
+            }
+
+            let serverHandled = startMockServer(listenerFD: listenerFD, state: state) { line in
+                guard let payload = self.jsonObject(line), let id = payload["id"] as? String else {
+                    return self.malformedRequestResponse(raw: line)
+                }
+                return self.v2Response(
+                    id: id,
+                    ok: true,
+                    result: ["status": "accepted"]
+                )
+            }
+            let hookInput = #"""
+            {
+              "hook_event_name":"beforeShellExecution",
+              "conversation_id":"cursor-session",
+              "command":"git status",
+              "cwd":"/tmp"
+            }
+            """#
+            let result = runProcess(
+                executablePath: cliPath,
+                arguments: ["hooks", "feed", "--source", "cursor", "--event", "beforeShellExecution"],
+                environment: [
+                    "HOME": root.path,
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "PWD": root.path,
+                    "CMUX_SOCKET_PATH": socketPath,
+                    "CMUX_WORKSPACE_ID": "33333333-3333-3333-3333-333333333333",
+                    "CMUX_CURSOR_PID": "525252",
+                    "CMUX_CLI_SENTRY_DISABLED": "1",
+                ],
+                standardInput: hookInput,
+                timeout: 5
+            )
+            wait(for: [serverHandled], timeout: 5)
+            let events = state.snapshot().compactMap { line -> [String: Any]? in
+                guard let payload = self.jsonObject(line),
+                      payload["method"] as? String == "feed.push",
+                      let params = payload["params"] as? [String: Any] else {
+                    return nil
+                }
+                return params["event"] as? [String: Any]
+            }
+            return (result, events)
+        }
+
+        let (result, events) = try runCursorEvent()
+        XCTAssertFalse(result.timedOut, result.stderr)
+        XCTAssertEqual(result.status, 0, result.stderr)
+        XCTAssertEqual(result.stdout, "{}\n")
+        XCTAssertEqual(events.first?["hook_event_name"] as? String, "PreToolUse")
+        XCTAssertEqual(events.first?["tool_name"] as? String, "Shell")
+        let toolInput = events.first?["tool_input"] as? [String: Any]
+        XCTAssertEqual(toolInput?["command"] as? String, "git status")
+    }
+
+    func testCursorLifecycleAndStopStatusesMatchSharedAgentBehavior() throws {
+        let cliPath = try bundledCLIPath()
+        let socketPath = makeSocketPath("cursor-lifecycle")
+        let listenerFD = try bindUnixSocket(at: socketPath)
+        let state = MockSocketServerState()
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-cursor-lifecycle-\(UUID().uuidString)", isDirectory: true)
+        let workspaceId = "11111111-1111-1111-1111-111111111111"
+        let surfaceId = "22222222-2222-2222-2222-222222222222"
+        let concurrentSessionId = "cursor-concurrent"
+        let concurrentStopGateArmed = DispatchSemaphore(value: 0)
+        let concurrentStopSurfaceListStarted = DispatchSemaphore(value: 0)
+        let concurrentResponsePersisted = DispatchSemaphore(value: 0)
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            Darwin.close(listenerFD)
+            unlink(socketPath)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let environment: [String: String] = [
+            "HOME": root.path,
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PWD": root.path,
+            "CMUX_SOCKET_PATH": socketPath,
+            "CMUX_WORKSPACE_ID": workspaceId,
+            "CMUX_SURFACE_ID": surfaceId,
+            "CMUX_AGENT_HOOK_STATE_DIR": root.path,
+            "CMUX_CLI_SENTRY_DISABLED": "1",
+        ]
+
+        let serverHandler: @Sendable (String) -> String = { line in
+            guard let payload = self.jsonObject(line) else { return "OK" }
+            guard let id = payload["id"] as? String,
+                  let method = payload["method"] as? String else {
+                return self.malformedRequestResponse(id: payload["id"] as? String, raw: line)
+            }
+            switch method {
+            case "surface.list":
+                if concurrentStopGateArmed.wait(timeout: .now()) == .success {
+                    concurrentStopSurfaceListStarted.signal()
+                    _ = concurrentResponsePersisted.wait(timeout: .now() + 2)
+                }
+                return self.surfaceListResponse(id: id, surfaceId: surfaceId)
+            case "surface.resume.set", "feed.push":
+                return self.v2Response(id: id, ok: true, result: ["ok": true])
+            default:
+                return self.v2Response(id: id, ok: true, result: [:])
+            }
+        }
+        for _ in 0..<64 {
+            startDetachedMockServer(listenerFD: listenerFD, state: state, handler: serverHandler)
+        }
+
+        func runCursorHook(_ subcommand: String, input: String) -> ProcessRunResult {
+            let result = runProcess(
+                executablePath: cliPath,
+                arguments: ["hooks", "cursor", subcommand],
+                environment: environment,
+                standardInput: input,
+                timeout: 5
+            )
+            XCTAssertFalse(result.timedOut, result.stderr)
+            XCTAssertEqual(result.status, 0, result.stderr)
+            XCTAssertEqual(result.stdout, "{}\n")
+            return result
+        }
+
+        func beginTurn(sessionId: String) {
+            let sessionStartCommandIndex = state.commands.count
+            _ = runCursorHook(
+                "session-start",
+                input: #"{"conversation_id":"\#(sessionId)","cwd":"\#(root.path)","hook_event_name":"sessionStart"}"#
+            )
+            let sessionStartCommands = Array(state.commands.dropFirst(sessionStartCommandIndex))
+            XCTAssertTrue(
+                sessionStartCommands.contains {
+                    $0 == "clear_notifications --tab=\(workspaceId) --panel=\(surfaceId)"
+                },
+                "Expected Cursor /clear boundary to clear its panel notification, saw \(sessionStartCommands)"
+            )
+            let commandStart = state.commands.count
+            _ = runCursorHook(
+                "prompt-submit",
+                input: #"""
+                {
+                  "conversation_id":"\#(sessionId)",
+                  "cwd":"\#(root.path)",
+                  "hook_event_name":"beforeSubmitPrompt"
+                }
+                """#
+            )
+            let commands = Array(state.commands.dropFirst(commandStart))
+            XCTAssertTrue(
+                commands.contains { $0.contains("set_status cursor Running") },
+                "Expected Cursor prompt to mark the pane Running, saw \(commands)"
+            )
+            XCTAssertTrue(
+                commands.contains { $0 == "clear_notifications --tab=\(workspaceId) --panel=\(surfaceId)" },
+                "Expected Cursor prompt to clear only its own panel notification, saw \(commands)"
+            )
+            XCTAssertFalse(
+                commands.contains { $0 == "clear_notifications --tab=\(workspaceId)" },
+                "Cursor prompt must not clear sibling panel notifications, saw \(commands)"
+            )
+        }
+
+        let completedSessionId = "cursor-completed"
+        beginTurn(sessionId: completedSessionId)
+        var commandStart = state.commands.count
+        _ = runCursorHook(
+            "agent-response",
+            input: #"{"conversation_id":"\#(completedSessionId)","text":"Finished the requested Cursor work."}"#
+        )
+        var commands = Array(state.commands.dropFirst(commandStart))
+        XCTAssertFalse(
+            commands.contains { $0.hasPrefix("notify_target_async ") || $0.contains("set_status cursor Idle") },
+            "Cursor response caching must not publish or end the turn, saw \(commands)"
+        )
+        commandStart = state.commands.count
+        _ = runCursorHook(
+            "stop",
+            input: #"""
+            {
+              "conversation_id":"\#(completedSessionId)",
+              "cwd":"\#(root.path)",
+              "hook_event_name":"stop",
+              "status":"completed"
+            }
+            """#
+        )
+        commands = Array(state.commands.dropFirst(commandStart))
+        XCTAssertEqual(
+            commands.filter {
+                $0.hasPrefix("notify_target_async \(workspaceId) \(surfaceId) Cursor|Completed")
+                    && $0.contains("Finished the requested Cursor work.")
+            }.count,
+            1,
+            "Expected exactly one Cursor completion notification with the final response, saw \(commands)"
+        )
+        XCTAssertTrue(
+            commands.contains { $0.contains("set_status cursor Idle") },
+            "Expected completed Cursor stop to mark the pane Idle, saw \(commands)"
+        )
+
+        beginTurn(sessionId: concurrentSessionId)
+        let concurrentStopResult = ProcessRunResultBox()
+        let concurrentStopFinished = DispatchSemaphore(value: 0)
+        concurrentStopGateArmed.signal()
+        DispatchQueue.global(qos: .userInitiated).async {
+            concurrentStopResult.store(
+                self.runProcess(
+                    executablePath: cliPath,
+                    arguments: ["hooks", "cursor", "stop"],
+                    environment: environment,
+                    standardInput: #"""
+                    {
+                      "conversation_id":"cursor-concurrent",
+                      "cwd":"\#(root.path)",
+                      "hook_event_name":"stop",
+                      "status":"completed"
+                    }
+                    """#,
+                    timeout: 5
+                )
+            )
+            concurrentStopFinished.signal()
+        }
+        XCTAssertEqual(concurrentStopSurfaceListStarted.wait(timeout: .now() + 2), .success)
+        commandStart = state.commands.count
+        _ = runCursorHook(
+            "agent-response",
+            input: #"""
+            {
+              "conversation_id":"cursor-concurrent",
+              "text":"Concurrent final response.",
+              "hook_event_name":"afterAgentResponse"
+            }
+            """#
+        )
+        concurrentResponsePersisted.signal()
+        XCTAssertEqual(concurrentStopFinished.wait(timeout: .now() + 5), .success)
+        let stopResult = try XCTUnwrap(concurrentStopResult.load())
+        XCTAssertFalse(stopResult.timedOut, stopResult.stderr)
+        XCTAssertEqual(stopResult.status, 0, stopResult.stderr)
+        commands = Array(state.commands.dropFirst(commandStart))
+        XCTAssertEqual(
+            commands.filter {
+                $0.hasPrefix("notify_target_async \(workspaceId) \(surfaceId) Cursor|Completed")
+                    && $0.contains("Concurrent final response.")
+            }.count,
+            1,
+            "Expected concurrent Cursor stop to use afterAgentResponse text, saw \(commands)"
+        )
+
+        let errorSessionId = "cursor-error"
+        beginTurn(sessionId: errorSessionId)
+        commandStart = state.commands.count
+        _ = runCursorHook(
+            "stop",
+            input: #"""
+            {
+              "conversation_id":"\#(errorSessionId)",
+              "cwd":"\#(root.path)",
+              "hook_event_name":"stop",
+              "status":"error",
+              "error":"Shell execution failed"
+            }
+            """#
+        )
+        commands = Array(state.commands.dropFirst(commandStart))
+        let cursorErrorNotification = "notify_target_async \(workspaceId) \(surfaceId) "
+            + "Cursor|Error|Shell execution failed"
+        XCTAssertTrue(
+            commands.contains { $0.contains(cursorErrorNotification) },
+            "Expected Cursor error stop to publish an error notification, saw \(commands)"
+        )
+        XCTAssertTrue(
+            commands.contains { $0.contains("set_agent_lifecycle cursor needsInput") },
+            "Expected Cursor error stop to require attention, saw \(commands)"
+        )
+        XCTAssertTrue(
+            commands.contains { $0.contains("set_status cursor Cursor error") },
+            "Expected Cursor error stop to show an error status, saw \(commands)"
+        )
+        XCTAssertFalse(
+            commands.contains { $0.contains("set_status cursor Idle") },
+            "Cursor error stop must not claim the pane is Idle, saw \(commands)"
+        )
+
+        let interruptedSessionId = "cursor-interrupted"
+        beginTurn(sessionId: interruptedSessionId)
+        commandStart = state.commands.count
+        _ = runCursorHook(
+            "stop",
+            input: #"""
+            {
+              "conversation_id":"\#(interruptedSessionId)",
+              "cwd":"\#(root.path)",
+              "hook_event_name":"stop",
+              "status":"error"
+            }
+            """#
+        )
+        commands = Array(state.commands.dropFirst(commandStart))
+        XCTAssertFalse(
+            commands.contains { $0.hasPrefix("notify_target_async ") },
+            "Detail-free Cursor errors are user interruptions and must not notify, saw \(commands)"
+        )
+        XCTAssertTrue(
+            commands.contains { $0.contains("set_status cursor Idle") },
+            "Expected detail-free Cursor errors to return the pane to Idle, saw \(commands)"
+        )
+        XCTAssertFalse(
+            commands.contains { $0.contains("set_status cursor Cursor error") },
+            "Detail-free Cursor errors must not show an error status, saw \(commands)"
+        )
+
+        let abortedSessionId = "cursor-aborted"
+        beginTurn(sessionId: abortedSessionId)
+        commandStart = state.commands.count
+        _ = runCursorHook(
+            "stop",
+            input: #"""
+            {
+              "conversation_id":"\#(abortedSessionId)",
+              "cwd":"\#(root.path)",
+              "hook_event_name":"stop",
+              "status":"aborted"
+            }
+            """#
+        )
+        commands = Array(state.commands.dropFirst(commandStart))
+        XCTAssertFalse(
+            commands.contains { $0.hasPrefix("notify_target_async ") },
+            "Aborted Cursor turns must not publish a completion notification, saw \(commands)"
+        )
+        XCTAssertTrue(
+            commands.contains { $0.contains("set_status cursor Idle") },
+            "Expected aborted Cursor stop to return the pane to Idle, saw \(commands)"
+        )
+    }
+
     func testGenericHookAgentsPersistSanitizedLaunchCommandsForSessionRestore() throws {
         let scenarios: [GenericHookPersistenceScenario] = [
             GenericHookPersistenceScenario(

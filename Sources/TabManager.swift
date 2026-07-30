@@ -3236,6 +3236,11 @@ class TabManager: ObservableObject {
     private func updatePanelTitle(tabId: UUID, panelId: UUID, title: String) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
         _ = tab.updatePanelTitle(panelId: panelId, title: title)
+        clearCursorPresentationOnConversationResetIfNeeded(
+            workspace: tab,
+            panelId: panelId,
+            title: title
+        )
 
         if tab.focusedPanelId == panelId {
             tab.applyProcessTitle(title)
@@ -3243,6 +3248,31 @@ class TabManager: ObservableObject {
                 updateWindowTitle(for: tab)
             }
         }
+    }
+
+    private func clearCursorPresentationOnConversationResetIfNeeded(
+        workspace: Workspace,
+        panelId: UUID,
+        title: String
+    ) {
+        guard title == "Cursor Agent",
+              workspace.agentLifecycleStatesByPanelId[panelId]?["cursor"] == .idle,
+              let notificationStore = AppDelegate.shared?.notificationStore,
+              notificationStore.notifications(forTabId: workspace.id, surfaceId: panelId).contains(where: {
+                  $0.title == "Cursor"
+              }) else {
+            return
+        }
+        _ = workspace.clearAgentMessages(
+            notificationStore: notificationStore,
+            surfaceId: panelId
+        )
+#if DEBUG
+        cmuxDebugLog(
+            "agent.cursor.clearPresentation source=titleReset " +
+            "workspace=\(Self.debugShortWorkspaceId(workspace.id)) panel=\(panelId.uuidString.prefix(5))"
+        )
+#endif
     }
 
     func focusedSurfaceTitleDidChange(tabId: UUID) {

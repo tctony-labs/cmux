@@ -183,6 +183,18 @@ struct FeedEventClassifier {
             "SubagentStop": .subagentResponse,
             "Notification": .statusNotification,
         ],
+        "cursor": [
+            // Cursor invokes beforeShellExecution for every shell command.
+            // It is a policy interception hook, not proof that Cursor is
+            // waiting for the user, so it must remain non-blocking telemetry.
+            "beforeShellExecution": .toolStart,
+            "afterShellExecution": .toolEnd,
+            "beforeSubmitPrompt": .promptSubmit,
+            "afterAgentResponse": .response,
+            "sessionStart": .sessionStart,
+            "sessionEnd": .sessionEnd,
+            "stop": .response,
+        ],
         "hermes-agent": [
             // `pre_tool_call` is a tool *starting* — Hermes raises a
             // separate `pre_approval_request` for real approvals, so this

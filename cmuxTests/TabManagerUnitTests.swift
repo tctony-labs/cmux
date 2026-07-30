@@ -684,6 +684,55 @@ final class TabManagerWorkspaceOwnershipTests: XCTestCase {
         XCTAssertNil(workspace.customTitle)
         XCTAssertNotEqual(workspace.panelTitles[splitPanel.id], Optional(workspace.title))
     }
+
+    func testCursorConversationTitleResetClearsCompletedPresentation() throws {
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let manager = TabManager()
+        let store = TerminalNotificationStore.shared
+        let originalTabManager = appDelegate.tabManager
+        let originalNotificationStore = appDelegate.notificationStore
+        store.replaceNotificationsForTesting([])
+        store.configureNotificationDeliveryHandlerForTesting { _, _ in }
+        appDelegate.tabManager = manager
+        appDelegate.notificationStore = store
+        defer {
+            store.replaceNotificationsForTesting([])
+            store.resetNotificationDeliveryHandlerForTesting()
+            appDelegate.tabManager = originalTabManager
+            appDelegate.notificationStore = originalNotificationStore
+        }
+
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        workspace.setAgentLifecycle(key: "cursor", panelId: panelId, lifecycle: .idle)
+        XCTAssertTrue(workspace.recordConversationMessage("Cursor session completed"))
+        store.addNotification(
+            tabId: workspace.id,
+            surfaceId: panelId,
+            title: "Cursor",
+            subtitle: "Completed",
+            body: "Cursor session completed"
+        )
+        XCTAssertEqual(store.notifications(forTabId: workspace.id, surfaceId: panelId).count, 1)
+
+        NotificationCenter.default.post(
+            name: .ghosttyDidSetTitle,
+            object: nil,
+            userInfo: [
+                GhosttyNotificationKey.tabId: workspace.id,
+                GhosttyNotificationKey.surfaceId: panelId,
+                GhosttyNotificationKey.title: "Cursor Agent"
+            ]
+        )
+
+        XCTAssertTrue(
+            waitForCondition(timeout: 1.0) {
+                store.notifications(forTabId: workspace.id, surfaceId: panelId).isEmpty &&
+                    workspace.latestConversationMessage == nil
+            },
+            "Expected Cursor's /clear title reset to remove the panel notification and conversation message"
+        )
+    }
 }
 
 @MainActor
