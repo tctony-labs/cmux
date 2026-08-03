@@ -54,6 +54,7 @@ struct cmuxApp: App {
     @StateObject private var tabManager: TabManager
     @StateObject private var notificationStore = TerminalNotificationStore.shared
     @StateObject var closedItemHistoryStore = ClosedItemHistoryStore.shared
+    @State var recentWorkspaceHistoryModel: RecentWorkspaceHistoryModel
     @StateObject private var sidebarState = SidebarState()
     @StateObject private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
     @AppStorage(AppearanceSettings.appearanceModeKey) private var appearanceMode = AppearanceSettings.defaultMode.rawValue
@@ -72,6 +73,14 @@ struct cmuxApp: App {
     }
 
     init() {
+        let recentWorkspaceHistoryRepository = RecentWorkspaceHistoryRepository(
+            fileURL: RecentWorkspaceHistoryRepository.defaultHistoryFileURL()
+        )
+        let recentWorkspaceHistoryModel = RecentWorkspaceHistoryModel(
+            repository: recentWorkspaceHistoryRepository
+        )
+        _recentWorkspaceHistoryModel = State(initialValue: recentWorkspaceHistoryModel)
+
         // Build the settings container once. All injected dependencies
         // (the catalog, the two stores, the error log) live on this
         // single struct; nothing in the package or app references a
@@ -224,7 +233,8 @@ struct cmuxApp: App {
             notificationStore: notificationStore,
             sidebarState: sidebarState,
             settingsRuntime: settingsRuntime,
-            auth: authComposition
+            auth: authComposition,
+            recentWorkspaceHistoryModel: recentWorkspaceHistoryModel
         )
         StartupBreadcrumbLog.append("app.init.delegate.configured")
     }

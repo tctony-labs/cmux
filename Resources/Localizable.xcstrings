@@ -61610,6 +61610,40 @@
         }
       }
     },
+    "commandPalette.switcher.section.openWorkspaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Workspaces"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開いているワークスペース"
+          }
+        }
+      }
+    },
+    "commandPalette.switcher.section.recentWorkspaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent Workspaces"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近のワークスペース"
+          }
+        }
+      }
+    },
     "commandPalette.switcher.windowLabel": {
       "extractionState": "manual",
       "localizations": {
@@ -74823,6 +74857,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "Search history"
+          }
+        }
+      }
+    },
+    "menu.history.clearRecentWorkspaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Recent Workspaces"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近のワークスペースを消去"
+          }
+        }
+      }
+    },
+    "menu.history.clearRecentWorkspaces.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Recent Workspaces"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近のワークスペースはありません"
+          }
+        }
+      }
+    },
+    "menu.history.recentWorkspaces.openedAtFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opened %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開いた日時: %@"
           }
         }
       }

@@ -2382,6 +2382,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// fallback: a workspace that never fired a notification still carries a
     /// real timestamp instead of nothing.
     let createdAt = Date()
+    /// Stable local-directory identity used by recent-workspace history. Unlike
+    /// `currentDirectory`, this does not change when the focused shell runs `cd`.
+    let recentWorkspaceDirectory: String
     @Published var title: String
     @Published var customTitle: String?
     @Published var customDescription: String?
@@ -3114,6 +3117,7 @@ final class Workspace: Identifiable, ObservableObject {
         let initialDirectory = hasWorkingDirectory
             ? trimmedWorkingDirectory
             : FileManager.default.homeDirectoryForCurrentUser.path
+        self.recentWorkspaceDirectory = initialDirectory
         self.currentDirectory = hasWorkingDirectory
             ? trimmedWorkingDirectory
             : FileManager.default.homeDirectoryForCurrentUser.path
@@ -11913,7 +11917,8 @@ extension Workspace: BonsplitDelegate {
             initialTerminalInput: launch.initialTerminalInput,
             initialTerminalEnvironment: launch.initialTerminalEnvironment,
             inheritWorkingDirectory: launch.terminalWorkingDirectory != nil,
-            autoWelcomeIfNeeded: false
+            autoWelcomeIfNeeded: false,
+            recordInRecentWorkspaceHistory: launch.remoteConfiguration == nil
         )
         if let remoteConfiguration = launch.remoteConfiguration {
             forkWorkspace.configureRemoteConnection(

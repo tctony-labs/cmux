@@ -558,6 +558,11 @@
 		A5C0DE0000000000000000BC /* ProjectSchemesTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C0DE0000000000000000BB /* ProjectSchemesTabView.swift */; };
 		A5C0DE0000000000000000B8 /* ProjectTargetsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C0DE0000000000000000B7 /* ProjectTargetsTabView.swift */; };
 		A500RG01 /* ReactGrab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A500RG00 /* ReactGrab.swift */; };
+		C0DE88020000000000000001 /* RecentWorkspaceHistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE88010000000000000001 /* RecentWorkspaceHistoryEntry.swift */; };
+		C0DE88080000000000000001 /* RecentWorkspaceHistoryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE88070000000000000001 /* RecentWorkspaceHistoryModel.swift */; };
+		C0DE88040000000000000001 /* RecentWorkspaceHistoryPersistenceSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE88030000000000000001 /* RecentWorkspaceHistoryPersistenceSnapshot.swift */; };
+		C0DE88060000000000000001 /* RecentWorkspaceHistoryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE88050000000000000001 /* RecentWorkspaceHistoryRepository.swift */; };
+		C0DE880A0000000000000001 /* RecentWorkspaceHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE88090000000000000001 /* RecentWorkspaceHistoryTests.swift */; };
 		EE30D5000000000000000002 /* RemoteDaemonStrings+App.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE30D5000000000000000001 /* RemoteDaemonStrings+App.swift */; };
 		E30780000000000000000016 /* RemoteDropUploadError+LocalizedError.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30780000000000000000015 /* RemoteDropUploadError+LocalizedError.swift */; };
 		A5001643 /* RemoteInteractiveShellBootstrapBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001642 /* RemoteInteractiveShellBootstrapBuilder.swift */; };
@@ -1414,6 +1419,11 @@
 		A5C0DE0000000000000000BB /* ProjectSchemesTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/ProjectSchemesTabView.swift; sourceTree = "<group>"; };
 		A5C0DE0000000000000000B7 /* ProjectTargetsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/ProjectTargetsTabView.swift; sourceTree = "<group>"; };
 		A500RG00 /* ReactGrab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/ReactGrab.swift; sourceTree = "<group>"; };
+		C0DE88010000000000000001 /* RecentWorkspaceHistoryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentWorkspaceHistoryEntry.swift; sourceTree = "<group>"; };
+		C0DE88070000000000000001 /* RecentWorkspaceHistoryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentWorkspaceHistoryModel.swift; sourceTree = "<group>"; };
+		C0DE88030000000000000001 /* RecentWorkspaceHistoryPersistenceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentWorkspaceHistoryPersistenceSnapshot.swift; sourceTree = "<group>"; };
+		C0DE88050000000000000001 /* RecentWorkspaceHistoryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentWorkspaceHistoryRepository.swift; sourceTree = "<group>"; };
+		C0DE88090000000000000001 /* RecentWorkspaceHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentWorkspaceHistoryTests.swift; sourceTree = "<group>"; };
 		EE30D5000000000000000001 /* RemoteDaemonStrings+App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RemoteDaemonStrings+App.swift"; sourceTree = "<group>"; };
 		E30780000000000000000015 /* RemoteDropUploadError+LocalizedError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RemoteDropUploadError+LocalizedError.swift"; sourceTree = "<group>"; };
 		A5001642 /* RemoteInteractiveShellBootstrapBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteInteractiveShellBootstrapBuilder.swift; sourceTree = "<group>"; };
@@ -2111,6 +2121,10 @@
 				F0C05170000000000000001 /* FocusHistory.swift */,
 				C0DEFB100000000000000002 /* FocusSurfaceBroadcaster.swift */,
 				C10D51700000000000000001 /* ClosedItemHistory.swift */,
+				C0DE88010000000000000001 /* RecentWorkspaceHistoryEntry.swift */,
+				C0DE88070000000000000001 /* RecentWorkspaceHistoryModel.swift */,
+				C0DE88030000000000000001 /* RecentWorkspaceHistoryPersistenceSnapshot.swift */,
+				C0DE88050000000000000001 /* RecentWorkspaceHistoryRepository.swift */,
 				D1FFC0DE000000000000D001 /* DiffCommentSubmissionPool.swift */,
 				D1FFC0DE000000000000A001 /* DiffCommentStore.swift */,
 				E3309A04 /* TabManager+EqualizeSplits.swift */,
@@ -2562,6 +2576,7 @@
 				A5008380 /* BrowserFindJavaScriptTests.swift */,
 				C2B6A97D1F2E4C71A8B9D002 /* BrowserOmnibarPerformanceSupportTests.swift */,
 				A5008382 /* CommandPaletteSearchEngineTests.swift */,
+				C0DE88090000000000000001 /* RecentWorkspaceHistoryTests.swift */,
 				C0DEC0DE000000000000F101 /* CommandPaletteNucleoFFITests.swift */,
 				C0DEC0DE000000000000F201 /* CommandPaletteNucleoFFILibrarySupport.swift */,
 				C0DEC0DE000000000000F203 /* CommandPaletteNucleoFixtures.swift */,
@@ -3452,6 +3467,10 @@
 					A5C0DE0000000000000000BC /* ProjectSchemesTabView.swift in Sources */,
 					A5C0DE0000000000000000B8 /* ProjectTargetsTabView.swift in Sources */,
 				A500RG01 /* ReactGrab.swift in Sources */,
+				C0DE88020000000000000001 /* RecentWorkspaceHistoryEntry.swift in Sources */,
+				C0DE88080000000000000001 /* RecentWorkspaceHistoryModel.swift in Sources */,
+				C0DE88040000000000000001 /* RecentWorkspaceHistoryPersistenceSnapshot.swift in Sources */,
+				C0DE88060000000000000001 /* RecentWorkspaceHistoryRepository.swift in Sources */,
 				EE30D5000000000000000002 /* RemoteDaemonStrings+App.swift in Sources */,
 				E30780000000000000000016 /* RemoteDropUploadError+LocalizedError.swift in Sources */,
 				A5001643 /* RemoteInteractiveShellBootstrapBuilder.swift in Sources */,
@@ -3879,6 +3898,7 @@
 					F4100000A1B2C3D4E5F60718 /* PortScannerTests.swift in Sources */,
 				DE71CE00000000000000000A /* PresenceHeartbeatClientTests.swift in Sources */,
 				C47110010000000000000001 /* ProcessPipeReadCrashRegressionTests.swift in Sources */,
+				C0DE880A0000000000000001 /* RecentWorkspaceHistoryTests.swift in Sources */,
 				C58410010000000000000001 /* RenderableSystemSymbolTests.swift in Sources */,
 				D36A00050000000000000001 /* RendererRealizationPlannerTests.swift in Sources */,
 					F5410004A1B2C3D4E5F60718 /* RestorableAgentHookProviderHermesTests.swift in Sources */,

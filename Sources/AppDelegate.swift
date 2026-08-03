@@ -680,6 +680,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// `ContentView` environment so `@LiveSetting` can resolve the stores it
     /// observes inside the sidebar.
     var settingsRuntime: SettingsRuntime?
+    private(set) var recentWorkspaceHistoryModel: RecentWorkspaceHistoryModel?
     weak var fileExplorerState: FileExplorerState?
     weak var fullscreenControlsViewModel: TitlebarControlsViewModel?
     weak var sidebarSelectionState: SidebarSelectionState?
@@ -1800,13 +1801,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         notificationStore: TerminalNotificationStore,
         sidebarState: SidebarState,
         settingsRuntime: SettingsRuntime,
-        auth: MacAuthComposition
+        auth: MacAuthComposition,
+        recentWorkspaceHistoryModel: RecentWorkspaceHistoryModel
     ) {
         self.tabManager = tabManager
         self.settingsRuntime = settingsRuntime
         self.notificationStore = notificationStore
         self.sidebarState = sidebarState
         self.auth = auth
+        self.recentWorkspaceHistoryModel = recentWorkspaceHistoryModel
+        attachRecentWorkspaceHistory(to: tabManager)
         VMClient.bootstrap(auth: auth.coordinator)
         PhonePushClient.shared.configure(auth: auth.coordinator)
         MobileHostService.shared.configure(auth: auth.coordinator)
@@ -1845,6 +1849,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // keeps working. No-op when already set or the legacy file is absent.
         Task { await DevWindowDisplayDefault.migrateLegacyFileIfNeeded(runtime: settingsRuntime) }
 #endif
+    }
+
+    private func attachRecentWorkspaceHistory(to tabManager: TabManager) {
+        guard let recentWorkspaceHistoryModel else { return }
+        tabManager.attachRecentWorkspaceHistory(
+            recordOpened: {
+                [weak recentWorkspaceHistoryModel] directory, name, customTitle, openedAt in
+                recentWorkspaceHistoryModel?.recordOpened(
+                    directory: directory,
+                    displayName: name,
+                    customTitle: customTitle,
+                    openedAt: openedAt
+                )
+            },
+            updateTitle: {
+                [weak recentWorkspaceHistoryModel] directory, name, customTitle in
+                recentWorkspaceHistoryModel?.updateTitle(
+                    directory: directory,
+                    displayName: name,
+                    customTitle: customTitle
+                )
+            }
+        )
     }
 
     private func scheduleGhosttyCrashBreadcrumbIfNeeded(notificationStore: TerminalNotificationStore) {
@@ -4281,6 +4308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         fileExplorerState: FileExplorerState? = nil,
         cmuxConfigStore: CmuxConfigStore? = nil
     ) {
+        attachRecentWorkspaceHistory(to: tabManager)
         let key = ObjectIdentifier(window)
         forgetRecoverableMainWindowRoute(windowId: windowId)
         #if DEBUG
@@ -4375,6 +4403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         let didApplyStartupSessionRestore = attemptStartupSessionRestoreIfNeeded(primaryWindow: window)
+        tabManager.recordOpenWorkspacesInRecentHistory()
         if Self.shouldSaveSessionSnapshotAfterMainWindowRegistration(
             isTerminatingApp: isTerminatingApp,
             didApplyStartupSessionRestore: didApplyStartupSessionRestore,
@@ -7961,6 +7990,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             initialTerminalInput: initialTerminalInput,
             autoWelcomeIfNeeded: initialTerminalInput == nil
         )
+        attachRecentWorkspaceHistory(to: tabManager)
         tabManager.windowId = windowId
         if let sessionWindowSnapshot {
             let restoredPanelIdsByWorkspaceIndex = tabManager.restoreSessionSnapshot(
@@ -8027,7 +8057,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let root = ContentView(
             updateViewModel: updateViewModel,
             windowId: windowId,
-            commandPaletteQuickRunModel: commandPaletteQuickRunModel
+            commandPaletteQuickRunModel: commandPaletteQuickRunModel,
+            recentWorkspaceHistoryModel: recentWorkspaceHistoryModel
         )
             .environmentObject(tabManager)
             .environmentObject(notificationStore)

@@ -42,6 +42,28 @@ extension cmuxApp {
 
             Divider()
 
+            Menu(String(
+                localized: "menu.history.clearRecentWorkspaces",
+                defaultValue: "Clear Recent Workspaces"
+            )) {
+                let recentWorkspaces = recentWorkspaceHistoryEntries
+                if recentWorkspaces.isEmpty {
+                    Button(String(
+                        localized: "menu.history.clearRecentWorkspaces.empty",
+                        defaultValue: "No Recent Workspaces"
+                    )) {}
+                        .disabled(true)
+                } else {
+                    ForEach(recentWorkspaces) { entry in
+                        Button(entry.menuTitle) {
+                            recentWorkspaceHistoryModel.remove(id: entry.id)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
             splitCommandButton(title: String(localized: "menu.file.restorePreviousAppLaunch", defaultValue: "Restore Previous Launch"), shortcut: menuShortcut(for: .reopenPreviousSession)) {
                 if AppDelegate.shared?.reopenPreviousSession() != true {
                     NSSound.beep()
@@ -119,6 +141,11 @@ extension cmuxApp {
     private var recentlyClosedMenuSnapshot: ClosedItemHistoryMenuSnapshot {
         let _ = closedItemHistoryStore.revision
         return closedItemHistoryStore.menuSnapshot(maxItemCount: 10)
+    }
+
+    private var recentWorkspaceHistoryEntries: [RecentWorkspaceHistoryEntry] {
+        let _ = recentWorkspaceHistoryModel.revision
+        return recentWorkspaceHistoryModel.entries
     }
 
     private func historyMenuSectionTitle(title: String, subtitle: String) -> String {

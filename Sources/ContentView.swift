@@ -1066,6 +1066,20 @@ struct ContentView: View {
     var updateViewModel: UpdateStateModel
     let windowId: UUID
     let commandPaletteQuickRunModel: CommandPaletteQuickRunModel
+    let recentWorkspaceHistoryModel: RecentWorkspaceHistoryModel?
+
+    init(
+        updateViewModel: UpdateStateModel,
+        windowId: UUID,
+        commandPaletteQuickRunModel: CommandPaletteQuickRunModel,
+        recentWorkspaceHistoryModel: RecentWorkspaceHistoryModel? = nil
+    ) {
+        self.updateViewModel = updateViewModel
+        self.windowId = windowId
+        self.commandPaletteQuickRunModel = commandPaletteQuickRunModel
+        self.recentWorkspaceHistoryModel = recentWorkspaceHistoryModel
+    }
+
     @EnvironmentObject var tabManager: TabManager
     // ContentView observes the coalesced unread projection, NOT the notification
     // store. Reading `notificationStore` directly here would re-render the entire
@@ -1340,6 +1354,8 @@ struct ContentView: View {
     private static let commandPaletteUsageDefaultsKey = "commandPalette.commandUsage.v1"
     nonisolated private static let commandPaletteCommandsPrefix = ">"
     nonisolated private static let commandPaletteFileSearchPrefix = "@"
+    nonisolated private static let commandPaletteRecentWorkspaceCommandPrefix =
+        "switcher.recentWorkspace."
     private static var fileSearchDedupFingerprint: Int?
     private static let commandPaletteVisiblePreviewResultLimit = 48
     private static let commandPaletteVisiblePreviewCandidateLimit = 128
@@ -5211,12 +5227,42 @@ struct ContentView: View {
         }
     }
 
+    nonisolated static func commandPaletteGroupedSwitcherResults(
+        _ results: [CommandPaletteSearchResult],
+        scope: CommandPaletteListScope
+    ) -> [CommandPaletteSearchResult] {
+        guard scope == .switcher else { return results }
+        var openResults: [CommandPaletteSearchResult] = []
+        var recentResults: [CommandPaletteSearchResult] = []
+        openResults.reserveCapacity(results.count)
+        recentResults.reserveCapacity(results.count)
+
+        for result in results {
+            if result.id.hasPrefix(commandPaletteRecentWorkspaceCommandPrefix) {
+                recentResults.append(result)
+            } else {
+                openResults.append(result)
+            }
+        }
+        recentResults.sort { lhs, rhs in
+            if lhs.command.rank != rhs.command.rank {
+                return lhs.command.rank < rhs.command.rank
+            }
+            return lhs.command.title.localizedCaseInsensitiveCompare(rhs.command.title)
+                == .orderedAscending
+        }
+        return openResults + recentResults
+    }
+
     private func setCommandPaletteVisibleResults(
         _ results: [CommandPaletteSearchResult],
         scope: CommandPaletteListScope,
         fingerprint: Int?
     ) {
-        commandPaletteVisibleResults = results
+        commandPaletteVisibleResults = Self.commandPaletteGroupedSwitcherResults(
+            results,
+            scope: scope
+        )
         commandPaletteVisibleResultsScope = scope
         commandPaletteVisibleResultsFingerprint = fingerprint
         commandPaletteVisibleResultsVersion &+= 1
@@ -5235,12 +5281,32 @@ struct ContentView: View {
     }
 
     private func commandPaletteOverlayCommandListStateSnapshot() -> CommandPaletteCommandListRenderState {
+        let usesSwitcherSections = CommandPaletteShellInput(query: commandPaletteQuery) == nil
+            && commandPaletteListScope == .switcher
+        var previousSectionWasRecent: Bool?
         let rows = commandPaletteVisibleResults.map { result in
-            CommandPaletteRenderResultRow(
+            let isRecent = result.id.hasPrefix(Self.commandPaletteRecentWorkspaceCommandPrefix)
+            let sectionHeader: String?
+            if usesSwitcherSections, previousSectionWasRecent != isRecent {
+                sectionHeader = isRecent
+                    ? String(
+                        localized: "commandPalette.switcher.section.recentWorkspaces",
+                        defaultValue: "Recent Workspaces"
+                    )
+                    : String(
+                        localized: "commandPalette.switcher.section.openWorkspaces",
+                        defaultValue: "Open Workspaces"
+                    )
+                previousSectionWasRecent = isRecent
+            } else {
+                sectionHeader = nil
+            }
+            return CommandPaletteRenderResultRow(
                 id: result.id,
                 title: result.command.title,
                 matchedIndices: result.titleMatchIndices,
-                trailingLabel: commandPaletteRenderTrailingLabel(for: result.command)
+                trailingLabel: commandPaletteRenderTrailingLabel(for: result.command),
+                sectionHeader: sectionHeader
             )
         }
         let selectedIndex = commandPaletteSelectedIndex(resultCount: rows.count)
@@ -5374,9 +5440,12 @@ struct ContentView: View {
             let filteredMatches: [CommandPaletteResolvedSearchMatch] = (scope == .fileSearch && !queryIsEmpty)
                 ? matches.filter { $0.score > 0 }
                 : matches
-            cachedCommandPaletteResults = Self.commandPaletteMaterializedSearchResults(
-                matches: filteredMatches,
-                commandsByID: commandsByID
+            cachedCommandPaletteResults = Self.commandPaletteGroupedSwitcherResults(
+                Self.commandPaletteMaterializedSearchResults(
+                    matches: filteredMatches,
+                    commandsByID: commandsByID
+                ),
+                scope: scope
             )
             let resultIDs = cachedCommandPaletteResults.map(\.id)
             let pendingActivationResolution = Self.commandPalettePendingActivationResolution(
@@ -5587,9 +5656,12 @@ struct ContentView: View {
                     return
                 }
 
-                cachedCommandPaletteResults = Self.commandPaletteMaterializedSearchResults(
-                    matches: filteredMatches,
-                    commandsByID: commandPaletteSearchCommandsByID
+                cachedCommandPaletteResults = Self.commandPaletteGroupedSwitcherResults(
+                    Self.commandPaletteMaterializedSearchResults(
+                        matches: filteredMatches,
+                        commandsByID: commandPaletteSearchCommandsByID
+                    ),
+                    scope: scope
                 )
                 let resultIDs = cachedCommandPaletteResults.map(\.id)
                 let pendingActivationResolution = Self.commandPalettePendingActivationResolution(
@@ -5745,7 +5817,16 @@ struct ContentView: View {
                 }
             )
         }
-        return CommandPaletteSwitcherFingerprintContext.fingerprint(windowContexts: fingerprintContexts)
+        var hasher = Hasher()
+        hasher.combine(CommandPaletteSwitcherFingerprintContext.fingerprint(windowContexts: fingerprintContexts))
+        hasher.combine(recentWorkspaceHistoryModel?.revision)
+        for entry in recentWorkspaceHistoryModel?.entries ?? [] {
+            hasher.combine(entry.id)
+            hasher.combine(entry.directory)
+            hasher.combine(entry.displayName)
+            hasher.combine(entry.lastOpenedAt)
+        }
+        return hasher.finalize()
     }
 
     // MARK: - File Search (Quick Open)
@@ -5954,6 +6035,7 @@ struct ContentView: View {
     private func commandPaletteSwitcherEntries(includeSurfaces: Bool) -> [CommandPaletteCommand] {
         let windowContexts = commandPaletteSwitcherWindowContexts()
         guard !windowContexts.isEmpty else { return [] }
+        let recentWorkspaces = commandPaletteAvailableRecentWorkspaces(windowContexts: windowContexts)
 
         var entries: [CommandPaletteCommand] = []
         let estimatedCount = windowContexts.reduce(0) { partial, context in
@@ -5964,7 +6046,7 @@ struct ContentView: View {
             }
             return partial + workspaceCount + surfaceCount
         }
-        entries.reserveCapacity(estimatedCount)
+        entries.reserveCapacity(estimatedCount + recentWorkspaces.count)
         var nextRank = 0
 
         for context in windowContexts {
@@ -6059,6 +6141,36 @@ struct ContentView: View {
             }
         }
 
+        for recentWorkspace in recentWorkspaces {
+            let commandId = Self.commandPaletteRecentWorkspaceCommandPrefix
+                + recentWorkspace.id.uuidString.lowercased()
+            let pathComponents = recentWorkspace.directory.split(separator: "/").map(String.init)
+            let displayDirectory = recentWorkspace.displayDirectory
+            entries.append(CommandPaletteCommand(
+                id: commandId,
+                rank: nextRank,
+                title: displayDirectory,
+                subtitle: displayDirectory,
+                shortcutHint: nil,
+                kindLabel: String(
+                    localized: "commandPalette.kind.workspace",
+                    defaultValue: "Workspace"
+                ),
+                keywords: [
+                    "workspace",
+                    "recent",
+                    "open",
+                    recentWorkspace.directory,
+                    displayDirectory,
+                ] + pathComponents,
+                dismissOnRun: true,
+                action: {
+                    activateCommandPaletteRecentWorkspace(recentWorkspace)
+                }
+            ))
+            nextRank += 1
+        }
+
         return entries
     }
 
@@ -6135,6 +6247,62 @@ struct ContentView: View {
         }
 
         return workspaces
+    }
+
+    private func commandPaletteAvailableRecentWorkspaces(
+        windowContexts: [CommandPaletteSwitcherWindowContext]
+    ) -> [RecentWorkspaceHistoryEntry] {
+        let openDirectoryList: [String] = windowContexts.flatMap { context in
+            context.tabManager.tabs.compactMap { workspace in
+                guard !workspace.isRemoteWorkspace else { return nil }
+                return RecentWorkspaceHistoryEntry.normalizedDirectory(
+                    workspace.recentWorkspaceDirectory
+                )
+            }
+        }
+        return Self.commandPaletteAvailableRecentWorkspaceEntries(
+            recentWorkspaceHistoryModel?.entries ?? [],
+            openDirectories: Set(openDirectoryList)
+        )
+    }
+
+    nonisolated static func commandPaletteAvailableRecentWorkspaceEntries(
+        _ entries: [RecentWorkspaceHistoryEntry],
+        openDirectories: Set<String>
+    ) -> [RecentWorkspaceHistoryEntry] {
+        entries.filter { !openDirectories.contains($0.directory) }
+    }
+
+    private func activateCommandPaletteRecentWorkspace(_ entry: RecentWorkspaceHistoryEntry) {
+        let contexts = commandPaletteSwitcherWindowContexts()
+        for context in contexts {
+            if let workspace = context.tabManager.tabs.first(where: { workspace in
+                guard !workspace.isRemoteWorkspace else { return false }
+                return RecentWorkspaceHistoryEntry.normalizedDirectory(
+                    workspace.recentWorkspaceDirectory
+                ) == entry.directory
+            }) {
+                focusCommandPaletteSwitcherTarget(
+                    windowId: context.windowId,
+                    tabManager: context.tabManager,
+                    workspaceId: workspace.id
+                )
+                return
+            }
+        }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(
+            atPath: entry.directory,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue else {
+            NSSound.beep()
+            return
+        }
+        tabManager.addWorkspaceForQuickOpenDirectory(
+            URL(fileURLWithPath: entry.directory, isDirectory: true),
+            customTitle: entry.customTitle
+        )
     }
 
     private func commandPaletteOrderedSwitcherPanels(for workspace: Workspace) -> [UUID] {

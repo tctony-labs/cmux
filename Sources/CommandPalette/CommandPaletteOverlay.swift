@@ -16,6 +16,7 @@ struct CommandPaletteRenderResultRow: Identifiable, Equatable {
     let title: String
     let matchedIndices: Set<Int>
     let trailingLabel: CommandPaletteRenderTrailingLabel?
+    let sectionHeader: String?
 }
 
 struct CommandPaletteCommandListRenderState: Equatable {
@@ -80,12 +81,15 @@ struct CommandPaletteCommandListRowsView: View {
 
     private static let listMaxHeight: CGFloat = 450
     private static let rowHeight: CGFloat = 24
+    private static let sectionHeaderHeight: CGFloat = 22
     private static let emptyStateHeight: CGFloat = 44
 
     var body: some View {
+        let sectionHeaderCount = state.rows.lazy.filter { $0.sectionHeader != nil }.count
         let contentHeight = state.rows.isEmpty
             ? Self.emptyStateHeight
             : CGFloat(state.rows.count) * Self.rowHeight
+                + CGFloat(sectionHeaderCount) * Self.sectionHeaderHeight
         let listHeight = min(Self.listMaxHeight, contentHeight)
 
         ScrollView {
@@ -105,6 +109,16 @@ struct CommandPaletteCommandListRowsView: View {
                     }
                 } else {
                     ForEach(Array(state.rows.enumerated()), id: \.element.id) { index, row in
+                        if let sectionHeader = row.sectionHeader {
+                            Text(sectionHeader)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(height: Self.sectionHeaderHeight)
+                                .padding(.horizontal, 9)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+
                         let isSelected = index == state.selectedIndex
                         let isHovered = hoveredIndex == index
                         let rowBackground: Color = isSelected

@@ -460,6 +460,8 @@ class TabManager: ObservableObject {
     private var pendingWorkspaceUnfocusTarget: (tabId: UUID, panelId: UUID)?
     var sidebarSelectedWorkspaceIds: Set<UUID> { sidebarMultiSelection.selectedWorkspaceIds }
     private var currentWindowTabBarLeadingInset: CGFloat?
+    private var recentWorkspaceHistoryRecorder: ((String, String, String?, Date) -> Void)?
+    private var recentWorkspaceHistoryTitleUpdater: ((String, String, String?) -> Void)?
     private var closeConfirmationInFlight = false
     var confirmCloseHandler: ((String, String, Bool) -> Bool)?
     private var agentPIDSweepTimer: DispatchSourceTimer?
@@ -1014,10 +1016,48 @@ class TabManager: ObservableObject {
     }
 #endif
 
+    func attachRecentWorkspaceHistory(
+        recordOpened: @escaping (String, String, String?, Date) -> Void,
+        updateTitle: @escaping (String, String, String?) -> Void
+    ) {
+        recentWorkspaceHistoryRecorder = recordOpened
+        recentWorkspaceHistoryTitleUpdater = updateTitle
+    }
+
+    func recordOpenWorkspacesInRecentHistory() {
+        for workspace in tabs {
+            recordRecentWorkspaceIfEligible(workspace)
+        }
+    }
+
+    private func recordRecentWorkspaceIfEligible(_ workspace: Workspace) {
+        guard !workspace.isRemoteWorkspace else { return }
+        let displayName = workspace.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedDisplayName = displayName.flatMap { $0.isEmpty ? nil : $0 } ?? workspace.title
+        recentWorkspaceHistoryRecorder?(
+            workspace.recentWorkspaceDirectory,
+            resolvedDisplayName,
+            workspace.customTitle,
+            workspace.createdAt
+        )
+    }
+
+    private func updateRecentWorkspaceTitleIfEligible(_ workspace: Workspace) {
+        guard !workspace.isRemoteWorkspace else { return }
+        recentWorkspaceHistoryTitleUpdater?(
+            workspace.recentWorkspaceDirectory,
+            workspace.title,
+            workspace.customTitle
+        )
+    }
+
     @discardableResult
-    func addWorkspaceForQuickOpenDirectory(_ directoryURL: URL) -> Workspace {
+    func addWorkspaceForQuickOpenDirectory(
+        _ directoryURL: URL,
+        customTitle: String? = nil
+    ) -> Workspace {
         addWorkspace(
-            title: directoryURL.lastPathComponent,
+            title: customTitle ?? directoryURL.lastPathComponent,
             workingDirectory: directoryURL.path,
             inheritWorkingDirectory: false
         )
@@ -1037,7 +1077,8 @@ class TabManager: ObservableObject {
         placementOverride: WorkspacePlacement? = nil,
         autoWelcomeIfNeeded: Bool = true,
         autoRefreshMetadata: Bool = true,
-        normalizeWorkspaceGroupsAfterInsert: Bool = true
+        normalizeWorkspaceGroupsAfterInsert: Bool = true,
+        recordInRecentWorkspaceHistory: Bool = true
     ) -> Workspace {
         let sourceWorkspace = selectedWorkspace
         let capturedTabs = tabs
@@ -1136,6 +1177,9 @@ class TabManager: ObservableObject {
             }
             publishCmuxWorkspaceCreated(newWorkspace, selected: select)
             publishCmuxInitialSurfaceCreated(newWorkspace, selected: select)
+            if recordInRecentWorkspaceHistory {
+                recordRecentWorkspaceIfEligible(newWorkspace)
+            }
             if select {
 #if DEBUG
                 debugPrimeWorkspaceSwitchTrigger("create", to: newWorkspace.id)
@@ -1661,6 +1705,7 @@ class TabManager: ObservableObject {
     func setCustomTitle(tabId: UUID, title: String?) {
         guard let index = tabs.firstIndex(where: { $0.id == tabId }) else { return }
         tabs[index].setCustomTitle(title)
+        updateRecentWorkspaceTitleIfEligible(tabs[index])
         if selectedTabId == tabId {
             updateWindowTitle(for: tabs[index])
         }
@@ -4091,7 +4136,8 @@ class TabManager: ObservableObject {
             title: entry.snapshot.customTitle ?? entry.snapshot.processTitle,
             workingDirectory: entry.snapshot.currentDirectory,
             select: false,
-            autoWelcomeIfNeeded: false
+            autoWelcomeIfNeeded: false,
+            recordInRecentWorkspaceHistory: entry.snapshot.remote == nil
         )
         let restoredPanelIds = workspace.restoreSessionSnapshot(entry.snapshot)
         guard !entry.snapshot.hasRestorablePanels || !restoredPanelIds.isEmpty else {
