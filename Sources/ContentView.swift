@@ -6183,7 +6183,7 @@ struct ContentView: View {
         )
 
         guard let appDelegate = AppDelegate.shared else { return [fallback] }
-        let summaries = appDelegate.listMainWindowSummaries()
+        let summaries = appDelegate.listOpenMainWindowSummaries()
         guard !summaries.isEmpty else { return [fallback] }
 
         let orderedSummaries = summaries.sorted { lhs, rhs in

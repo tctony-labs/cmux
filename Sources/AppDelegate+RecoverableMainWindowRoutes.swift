@@ -156,11 +156,9 @@ extension AppDelegate {
         return sortedRecoverableMainWindowRoutes().filter { validWindowIds.contains($0.windowId) }
     }
 
-    func listMainWindowSummaries() -> [MainWindowSummary] {
-        var seen: Set<UUID> = []
-        var summaries = liveRegisteredMainWindowRouteSnapshots().map { snapshot in
-            seen.insert(snapshot.windowId)
-            return MainWindowSummary(
+    func listOpenMainWindowSummaries() -> [MainWindowSummary] {
+        liveRegisteredMainWindowRouteSnapshots().map { snapshot in
+            MainWindowSummary(
                 windowId: snapshot.windowId,
                 isKeyWindow: snapshot.window?.isKeyWindow ?? false,
                 isVisible: snapshot.window?.isVisible ?? false,
@@ -168,6 +166,11 @@ extension AppDelegate {
                 selectedWorkspaceId: snapshot.tabManager.selectedTabId
             )
         }
+    }
+
+    func listMainWindowSummaries() -> [MainWindowSummary] {
+        var summaries = listOpenMainWindowSummaries()
+        var seen = Set(summaries.map(\.windowId))
         for snapshot in recoverableMainWindowRouteSnapshots() where seen.insert(snapshot.windowId).inserted {
             summaries.append(
                 MainWindowSummary(
