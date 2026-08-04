@@ -9,6 +9,7 @@ extension cmuxApp {
             let historyTabManager = activeTabManager
             let recentlyFocusedSnapshot = recentlyFocusedMenuSnapshot(manager: historyTabManager)
             let recentlyClosedSnapshot = recentlyClosedMenuSnapshot
+            let recentWorkspaces = recentWorkspaceHistoryEntries
 
             splitCommandButton(title: String(localized: "menu.history.focusBack", defaultValue: "Focus Back"), shortcut: menuShortcut(for: .focusHistoryBack)) {
                 historyTabManager.navigateBack()
@@ -46,7 +47,6 @@ extension cmuxApp {
                 localized: "menu.history.clearRecentWorkspaces",
                 defaultValue: "Clear Recent Workspaces"
             )) {
-                let recentWorkspaces = recentWorkspaceHistoryEntries
                 if recentWorkspaces.isEmpty {
                     Button(String(
                         localized: "menu.history.clearRecentWorkspaces.empty",

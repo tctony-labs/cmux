@@ -80,6 +80,57 @@ struct RecentWorkspaceHistoryTests {
     }
 
     @Test
+    func repositoryDoesNotPersistHomeDirectory() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let repository = RecentWorkspaceHistoryRepository(fileURL: fixture.fileURL)
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+
+        let afterHomeOpen = await repository.recordOpened(
+            directory: homeDirectory.path,
+            displayName: "Home",
+            openedAt: Date(timeIntervalSince1970: 100)
+        )
+        let afterProjectOpen = await repository.recordOpened(
+            directory: homeDirectory.appendingPathComponent("Projects/cmux").path,
+            displayName: "cmux",
+            openedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        #expect(afterHomeOpen.entries.isEmpty)
+        #expect(afterProjectOpen.entries.map(\.directory) == [
+            homeDirectory.appendingPathComponent("Projects/cmux").path
+        ])
+
+        let persistedSnapshot = try JSONDecoder().decode(
+            RecentWorkspaceHistoryPersistenceSnapshot.self,
+            from: Data(contentsOf: fixture.fileURL)
+        )
+        let legacySnapshot = RecentWorkspaceHistoryPersistenceSnapshot(
+            entries: persistedSnapshot.entries + [RecentWorkspaceHistoryEntry(
+                directory: homeDirectory.path,
+                displayName: "Legacy Home",
+                lastOpenedAt: Date(timeIntervalSince1970: 300)
+            )]
+        )
+        try JSONEncoder().encode(legacySnapshot).write(to: fixture.fileURL, options: .atomic)
+
+        let restored = RecentWorkspaceHistoryRepository(fileURL: fixture.fileURL)
+        let restoredSnapshot = await restored.snapshot()
+        #expect(restoredSnapshot.entries.map(\.directory) == [
+            homeDirectory.appendingPathComponent("Projects/cmux").path
+        ])
+
+        let cleanedSnapshot = try JSONDecoder().decode(
+            RecentWorkspaceHistoryPersistenceSnapshot.self,
+            from: Data(contentsOf: fixture.fileURL)
+        )
+        #expect(cleanedSnapshot.entries.map(\.directory) == [
+            homeDirectory.appendingPathComponent("Projects/cmux").path
+        ])
+    }
+
+    @Test
     @MainActor
     func workspaceRenameUpdatesHistoryAndQuickOpenRestoresCustomTitle() throws {
         let fixture = try Fixture()

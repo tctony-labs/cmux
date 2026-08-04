@@ -762,6 +762,11 @@ struct cmuxApp: App {
 
             // Close tab/workspace
             CommandGroup(after: .newItem) {
+                let workspaceMenuManager = activeTabManager
+                let workspaceMenuSnapshot = workspaceCommandMenuSnapshot(
+                    manager: workspaceMenuManager
+                )
+
                 splitCommandButton(
                     title: String(localized: "menu.file.quickRun", defaultValue: "Quick Run…"),
                     shortcut: menuShortcut(for: .quickRun)
@@ -808,7 +813,10 @@ struct cmuxApp: App {
                 }
 
                 Menu(String(localized: "commandPalette.switcher.workspaceLabel", defaultValue: "Workspace")) {
-                    workspaceCommandMenuContent(manager: activeTabManager)
+                    workspaceCommandMenuContent(
+                        manager: workspaceMenuManager,
+                        snapshot: workspaceMenuSnapshot
+                    )
                 }
 
             }
@@ -1211,6 +1219,35 @@ struct cmuxApp: App {
         return AppDelegate.shared?.windowMoveTargets(referenceWindowId: referenceWindowId) ?? []
     }
 
+    private func workspaceCommandMenuSnapshot(manager: TabManager) -> WorkspaceCommandMenuSnapshot {
+        let workspace = manager.selectedWorkspace
+        let workspaceIndex = workspace.flatMap {
+            selectedWorkspaceIndex(in: manager, workspaceId: $0.id)
+        }
+        let pinState = WorkspacePinCommands.selectedWorkspacePinState(in: manager)
+        let windowMoveTargets = selectedWorkspaceWindowMoveTargets(in: manager).map { target in
+            WorkspaceCommandMenuSnapshot.WindowMoveTarget(
+                id: target.windowId,
+                label: target.label,
+                isCurrentWindow: target.isCurrentWindow
+            )
+        }
+        return WorkspaceCommandMenuSnapshot(
+            hasSelectedWorkspace: workspace != nil,
+            hasCustomTitle: workspace?.hasCustomTitle == true,
+            workspaceIndex: workspaceIndex,
+            workspaceCount: manager.tabs.count,
+            pinMenuLabel: WorkspacePinCommands.selectedWorkspaceMenuLabel(
+                in: manager,
+                pinState: pinState
+            ),
+            canPin: pinState != nil,
+            canMarkRead: selectedWorkspaceCanMarkRead(in: manager),
+            canMarkUnread: selectedWorkspaceCanMarkUnread(in: manager),
+            windowMoveTargets: windowMoveTargets
+        )
+    }
+
     private func toggleSelectedWorkspacePinned(in manager: TabManager) {
         if !WorkspacePinCommands.toggleSelectedWorkspace(in: manager) {
             NSSound.beep()
@@ -1296,28 +1333,26 @@ struct cmuxApp: App {
     }
 
     @ViewBuilder
-    private func workspaceCommandMenuContent(manager: TabManager) -> some View {
-        let workspace = manager.selectedWorkspace
-        let workspaceIndex = workspace.flatMap { selectedWorkspaceIndex(in: manager, workspaceId: $0.id) }
-        let windowMoveTargets = selectedWorkspaceWindowMoveTargets(in: manager)
-        let pinState = WorkspacePinCommands.selectedWorkspacePinState(in: manager)
-
-        Button(WorkspacePinCommands.selectedWorkspaceMenuLabel(in: manager, pinState: pinState)) {
+    private func workspaceCommandMenuContent(
+        manager: TabManager,
+        snapshot: WorkspaceCommandMenuSnapshot
+    ) -> some View {
+        Button(snapshot.pinMenuLabel) {
             toggleSelectedWorkspacePinned(in: manager)
         }
-        .disabled(pinState == nil)
+        .disabled(!snapshot.canPin)
 
         Button(String(localized: "menu.view.renameWorkspace", defaultValue: "Rename Workspace…")) {
             _ = AppDelegate.shared?.requestRenameWorkspaceViaCommandPalette()
         }
-        .disabled(workspace == nil)
+        .disabled(!snapshot.hasSelectedWorkspace)
 
         Button(String(localized: "menu.view.editWorkspaceDescription", defaultValue: "Edit Workspace Description…")) {
             _ = AppDelegate.shared?.requestEditWorkspaceDescriptionViaCommandPalette()
         }
-        .disabled(workspace == nil)
+        .disabled(!snapshot.hasSelectedWorkspace)
 
-        if workspace?.hasCustomTitle == true {
+        if snapshot.hasCustomTitle {
             Button(String(localized: "contextMenu.removeCustomWorkspaceName", defaultValue: "Remove Custom Workspace Name")) {
                 clearSelectedWorkspaceCustomName(in: manager)
             }
@@ -1328,70 +1363,76 @@ struct cmuxApp: App {
         Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
             moveSelectedWorkspace(in: manager, by: -1)
         }
-        .disabled(workspaceIndex == nil || workspaceIndex == 0)
+        .disabled(snapshot.workspaceIndex == nil || snapshot.workspaceIndex == 0)
 
         Button(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")) {
             moveSelectedWorkspace(in: manager, by: 1)
         }
-        .disabled(workspaceIndex == nil || workspaceIndex == manager.tabs.count - 1)
+        .disabled(
+            snapshot.workspaceIndex == nil
+                || snapshot.workspaceIndex == snapshot.workspaceCount - 1
+        )
 
         Button(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top")) {
             moveSelectedWorkspaceToTop(in: manager)
         }
-        .disabled(workspace == nil || workspaceIndex == 0)
+        .disabled(!snapshot.hasSelectedWorkspace || snapshot.workspaceIndex == 0)
 
         Menu(String(localized: "contextMenu.moveWorkspaceToWindow", defaultValue: "Move Workspace to Window")) {
             Button(String(localized: "contextMenu.newWindow", defaultValue: "New Window")) {
                 moveSelectedWorkspaceToNewWindow(in: manager)
             }
-            .disabled(workspace == nil)
+            .disabled(!snapshot.hasSelectedWorkspace)
 
-            if !windowMoveTargets.isEmpty {
+            if !snapshot.windowMoveTargets.isEmpty {
                 Divider()
             }
 
-            ForEach(windowMoveTargets) { target in
+            ForEach(snapshot.windowMoveTargets) { target in
                 Button(target.label) {
-                    moveSelectedWorkspace(in: manager, toWindow: target.windowId)
+                    moveSelectedWorkspace(in: manager, toWindow: target.id)
                 }
-                .disabled(target.isCurrentWindow || workspace == nil)
+                .disabled(target.isCurrentWindow || !snapshot.hasSelectedWorkspace)
             }
         }
-        .disabled(workspace == nil)
+        .disabled(!snapshot.hasSelectedWorkspace)
 
         Divider()
 
         Button(String(localized: "menu.file.closeWorkspace", defaultValue: "Close Workspace")) {
             manager.closeCurrentWorkspaceWithConfirmation()
         }
-        .disabled(workspace == nil)
+        .disabled(!snapshot.hasSelectedWorkspace)
 
         Button(String(localized: "contextMenu.closeOtherWorkspaces", defaultValue: "Close Other Workspaces")) {
             closeOtherSelectedWorkspacePeers(in: manager)
         }
-        .disabled(workspace == nil || manager.tabs.count <= 1)
+        .disabled(!snapshot.hasSelectedWorkspace || snapshot.workspaceCount <= 1)
 
         Button(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")) {
             closeSelectedWorkspacesBelow(in: manager)
         }
-        .disabled(workspaceIndex == nil || workspaceIndex == manager.tabs.count - 1)
+        .disabled(
+            snapshot.workspaceIndex == nil
+                || snapshot.workspaceIndex == snapshot.workspaceCount - 1
+        )
 
         Button(String(localized: "contextMenu.closeWorkspacesAbove", defaultValue: "Close Workspaces Above")) {
             closeSelectedWorkspacesAbove(in: manager)
         }
-        .disabled(workspaceIndex == nil || workspaceIndex == 0)
+        .disabled(snapshot.workspaceIndex == nil || snapshot.workspaceIndex == 0)
 
         Divider()
 
         Button(String(localized: "contextMenu.markWorkspaceRead", defaultValue: "Mark Workspace as Read")) {
             markSelectedWorkspaceRead(in: manager)
         }
-        .disabled(!selectedWorkspaceCanMarkRead(in: manager))
+        .disabled(!snapshot.canMarkRead)
 
         Button(String(localized: "contextMenu.markWorkspaceUnread", defaultValue: "Mark Workspace as Unread")) {
             markSelectedWorkspaceUnread(in: manager)
         }
-        .disabled(!selectedWorkspaceCanMarkUnread(in: manager))
+        .disabled(!snapshot.canMarkUnread)
     }
 
     @ViewBuilder

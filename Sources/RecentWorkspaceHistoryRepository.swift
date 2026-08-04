@@ -10,6 +10,7 @@ actor RecentWorkspaceHistoryRepository {
     private let fileURL: URL?
     // FileManager is thread-safe, and all uses remain isolated to this repository actor.
     private nonisolated(unsafe) let fileManager: FileManager
+    private let homeDirectory: String?
     private var entries: [RecentWorkspaceHistoryEntry] = []
     private var revision: UInt64 = 0
     private var isLoaded = false
@@ -17,6 +18,9 @@ actor RecentWorkspaceHistoryRepository {
     init(fileURL: URL?, fileManager: FileManager = .default) {
         self.fileURL = fileURL
         self.fileManager = fileManager
+        self.homeDirectory = RecentWorkspaceHistoryEntry.normalizedDirectory(
+            fileManager.homeDirectoryForCurrentUser.path
+        )
     }
 
     func snapshot() -> (revision: UInt64, entries: [RecentWorkspaceHistoryEntry]) {
@@ -31,7 +35,8 @@ actor RecentWorkspaceHistoryRepository {
         openedAt: Date
     ) -> (revision: UInt64, entries: [RecentWorkspaceHistoryEntry]) {
         loadIfNeeded()
-        guard let normalizedDirectory = RecentWorkspaceHistoryEntry.normalizedDirectory(directory) else {
+        guard let normalizedDirectory = RecentWorkspaceHistoryEntry.normalizedDirectory(directory),
+              normalizedDirectory != homeDirectory else {
             return (revision, entries)
         }
 
@@ -73,6 +78,7 @@ actor RecentWorkspaceHistoryRepository {
     ) -> (revision: UInt64, entries: [RecentWorkspaceHistoryEntry]) {
         loadIfNeeded()
         guard let normalizedDirectory = RecentWorkspaceHistoryEntry.normalizedDirectory(directory),
+              normalizedDirectory != homeDirectory,
               let index = entries.firstIndex(where: { $0.directory == normalizedDirectory }) else {
             return (revision, entries)
         }
@@ -144,8 +150,13 @@ actor RecentWorkspaceHistoryRepository {
         }
 
         var newestEntryByDirectory: [String: RecentWorkspaceHistoryEntry] = [:]
+        var removedHomeDirectoryEntry = false
         for entry in snapshot.entries {
             guard let directory = RecentWorkspaceHistoryEntry.normalizedDirectory(entry.directory) else {
+                continue
+            }
+            guard directory != homeDirectory else {
+                removedHomeDirectoryEntry = true
                 continue
             }
             let normalizedEntry = RecentWorkspaceHistoryEntry(
@@ -165,6 +176,9 @@ actor RecentWorkspaceHistoryRepository {
         sortEntries()
         if !entries.isEmpty {
             revision &+= 1
+        }
+        if removedHomeDirectoryEntry {
+            persist()
         }
     }
 
