@@ -51,6 +51,15 @@ export const shortcutCategories: ShortcutCategory[] = [
         description: { en: "Command palette previous result", ja: "コマンドパレットの前の結果" },
         note: { en: "when the command palette is open", ja: "コマンドパレットを開いている間" },
       },
+      {
+        id: "quickOpenCopyPath",
+        combos: [["⌘", "Y"]],
+        description: {
+          en: "Copy the selected Quick Open path",
+          ja: "クイックオープンで選択したパスをコピー",
+        },
+        note: { en: "when Quick Open is active", ja: "クイックオープンを開いている間" },
+      },
       { id: "newWindow", combos: [["⌘", "⇧", "N"]], description: { en: "New window", ja: "新規ウインドウ" } },
       { id: "closeWindow", combos: [["⌃", "⌘", "W"]], description: { en: "Close window", ja: "ウインドウを閉じる" } },
       { id: "toggleFullScreen", combos: [["⌃", "⌘", "F"]], description: { en: "Toggle full screen", ja: "フルスクリーンを切り替え" } },

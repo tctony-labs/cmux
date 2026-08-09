@@ -6,6 +6,16 @@
 - `ContentView` 收到通知后调用 `openCommandPaletteFileSearch()` → `handleCommandPaletteListRequest(scope: .fileSearch)`
 - 初始 query 设为 `@`，输入框前缀触发 `.fileSearch` scope
 
+## 选中结果操作
+
+- `Enter`：执行默认打开操作
+- `Cmd+Enter`：执行替代打开操作；文件直接在外部编辑器打开，目录作为 workspace 打开
+- `Cmd+Y`：复制选中结果路径并关闭 Quick Open
+  - 显式 path query（`./`、`~/`、绝对路径）复制完整绝对路径
+  - 空 query 与 cross-directory search 复制相对于 workspace root 的路径
+
+`Cmd+Y` 对应可配置 action `shortcuts.bindings.quickOpenCopyPath`。
+
 ## Scope 判定（`commandPaletteListScope`）
 
 ```
@@ -145,6 +155,7 @@ build  dist  target
 | `keywords` | path 模式: `[]`（空）；cross-directory: `[文件名] + 路径分段` | 同左 | `[".", "open", "finder", "reveal"]` |
 | `dismissOnRun` | true | **false** | true |
 | `action` | `openFileInDefaultEditor` | 更新 `commandPaletteQuery` | `NSWorkspace.shared.open` |
+| `copyText` | 显式 path query: 绝对路径；空 query: workspace 相对路径 | 同左 | 绝对路径 |
 
 ### Path 模式触发规则
 

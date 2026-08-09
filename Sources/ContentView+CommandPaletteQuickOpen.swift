@@ -151,4 +151,16 @@ extension ContentView {
     nonisolated static func quickOpenDisplayPath(url: URL, rootDir: String) -> String? {
         CommandPaletteQuickOpenFileSearch.displayPath(url: url, rootDir: rootDir)
     }
+
+    nonisolated static func quickOpenPathForCopying(
+        _ url: URL,
+        workspaceRoot: String,
+        matchingQuery: String
+    ) -> String {
+        CommandPaletteQuickOpenFileSearch.pathForCopying(
+            url,
+            workspaceRoot: workspaceRoot,
+            matchingQuery: matchingQuery
+        )
+    }
 }

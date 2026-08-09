@@ -2995,6 +2995,20 @@ struct ContentView: View {
             runAlternateSelectedCommandPaletteResult()
         })
 
+        view = AnyView(view.onReceive(
+            NotificationCenter.default.publisher(for: .commandPaletteCopyPathRequested)
+        ) { notification in
+            guard isCommandPalettePresented else { return }
+            let requestedWindow = notification.object as? NSWindow
+            guard Self.shouldHandleCommandPaletteRequest(
+                observedWindow: observedWindow,
+                requestedWindow: requestedWindow,
+                keyWindow: NSApp.keyWindow,
+                mainWindow: NSApp.mainWindow
+            ) else { return }
+            copySelectedQuickOpenPath()
+        })
+
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .commandPaletteDismissRequested)) { notification in
             guard isCommandPalettePresented else { return }
             let requestedWindow = notification.object as? NSWindow
@@ -5544,6 +5558,11 @@ struct ContentView: View {
                                 }
                             },
                             completionText: Self.commandPaletteFileSearchPrefix + completionPath,
+                            copyText: Self.quickOpenPathForCopying(
+                                item.url,
+                                workspaceRoot: rootDir,
+                                matchingQuery: capturedMatchingQuery
+                            ),
                             alternateAction: isDir
                                 ? {
                                     self.tabManager.addWorkspaceForQuickOpenDirectory(item.url)
@@ -5894,6 +5913,11 @@ struct ContentView: View {
                     }
                 },
                 completionText: Self.commandPaletteFileSearchPrefix + completionPath,
+                copyText: Self.quickOpenPathForCopying(
+                    url,
+                    workspaceRoot: rootDir,
+                    matchingQuery: matchingQuery
+                ),
                 alternateAction: isDir
                     ? {
                         self.tabManager.addWorkspaceForQuickOpenDirectory(url)
@@ -5955,6 +5979,11 @@ struct ContentView: View {
                 NSWorkspace.shared.open(url)
             },
             completionText: Self.commandPaletteFileSearchPrefix + completionPath,
+            copyText: Self.quickOpenPathForCopying(
+                url,
+                workspaceRoot: rootDir,
+                matchingQuery: currentMatchingTerm
+            ),
             alternateAction: {
                 self.tabManager.addWorkspaceForQuickOpenDirectory(url)
                 return true
@@ -9363,6 +9392,28 @@ struct ContentView: View {
         if alternateAction() {
             dismissCommandPalette(restoreFocus: false)
         }
+    }
+
+    /// Copies the selected Quick Open result and closes the palette.
+    private func copySelectedQuickOpenPath() {
+        guard case .commands = commandPaletteMode,
+              commandPaletteListScope == .fileSearch,
+              commandPaletteHasCurrentResolvedResults,
+              !cachedCommandPaletteResults.isEmpty else {
+            return
+        }
+        let resolvedIndex = Self.commandPaletteResolvedSelectionIndex(
+            preferredCommandID: commandPaletteSelectionAnchorCommandID,
+            fallbackSelectedIndex: commandPaletteSelectedResultIndex,
+            resultIDs: cachedCommandPaletteResults.map(\.id)
+        )
+        guard let copyText = cachedCommandPaletteResults[resolvedIndex].command.copyText else {
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.setString(copyText, forType: .string) else { return }
+        dismissCommandPalette()
     }
 
     private func handleCommandPaletteSubmitRequest() {

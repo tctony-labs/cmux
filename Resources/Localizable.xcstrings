@@ -130390,6 +130390,29 @@
         }
       }
     },
+    "shortcut.quickOpenCopyPath.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Open: Copy Path"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックオープン: パスをコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速打开：复制路径"
+          }
+        }
+      }
+    },
     "shortcut.quickOpenFile.label": {
       "extractionState": "manual",
       "localizations": {

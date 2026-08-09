@@ -12750,6 +12750,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                event.keyCode == 36 || event.keyCode == 76 {
                 return false
             }
+            if paletteSnapshot.mode == CommandPaletteListScope.fileSearch.rawValue,
+               matchConfiguredShortcut(event: event, action: .quickOpenCopyPath) {
+                if paletteFieldEditorHasMarkedText {
+                    return false
+                }
+                NotificationCenter.default.post(
+                    name: .commandPaletteCopyPathRequested,
+                    object: paletteWindow
+                )
+                return true
+            }
+            if paletteSnapshot.mode == CommandPaletteListScope.fileSearch.rawValue,
+               activeConfiguredShortcutChordPrefixForCurrentEvent == nil,
+               armConfiguredShortcutChordIfNeeded(
+                   event: event,
+                   actions: [.quickOpenCopyPath]
+               ) {
+                return true
+            }
             // Cmd+Return runs the selected result's alternate action (Quick Open
             // file results open directly in the external editor, bypassing the
             // cmux preview). shouldSubmitPalette is false when Command is held,
@@ -15286,7 +15305,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func isMenuBackedShortcutAction(_ action: KeyboardShortcutSettings.Action) -> Bool {
-        action != .showHideAllWindows && action != .globalSearch
+        action != .showHideAllWindows
+            && action != .globalSearch
+            && action != .quickOpenCopyPath
     }
 
     private func isCloseShortcutAction(_ action: KeyboardShortcutSettings.Action) -> Bool {

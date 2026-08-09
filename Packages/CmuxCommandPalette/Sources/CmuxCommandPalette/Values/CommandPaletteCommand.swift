@@ -23,6 +23,8 @@ public struct CommandPaletteCommand: Identifiable {
     public let action: () -> Void
     /// Optional query text used when Tab completes this candidate.
     public let completionText: String?
+    /// Optional text copied by the command palette's contextual copy action.
+    public let copyText: String?
     /// Optional action executed when the command is activated with the Command
     /// modifier held (Cmd+Enter). Returns `true` when it handled the
     /// activation (so the palette dismisses) or `false` when it was a no-op
@@ -41,6 +43,7 @@ public struct CommandPaletteCommand: Identifiable {
         dismissOnRun: Bool,
         action: @escaping () -> Void,
         completionText: String? = nil,
+        copyText: String? = nil,
         alternateAction: (() -> Bool)? = nil
     ) {
         self.id = id
@@ -53,6 +56,7 @@ public struct CommandPaletteCommand: Identifiable {
         self.dismissOnRun = dismissOnRun
         self.action = action
         self.completionText = completionText
+        self.copyText = copyText
         self.alternateAction = alternateAction
     }
 

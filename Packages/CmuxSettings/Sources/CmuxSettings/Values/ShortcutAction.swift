@@ -33,6 +33,8 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Hashable, SettingCod
     case commandPalette
     case commandPaletteNext
     case commandPalettePrevious
+    /// Copies the selected Quick Open result's path.
+    case quickOpenCopyPath
     case sendFeedback
     case showNotifications
     case jumpToUnread
@@ -167,7 +169,8 @@ extension ShortcutAction {
             return .app
         case .toggleSidebar, .newTab, .newBrowserWorkspace, .openFolder, .quickRun,
              .quickOpenFile, .reopenPreviousSession, .goToWorkspace,
-             .commandPalette, .commandPaletteNext, .commandPalettePrevious, .sendFeedback,
+             .commandPalette, .commandPaletteNext, .commandPalettePrevious,
+             .quickOpenCopyPath, .sendFeedback,
              .showNotifications, .jumpToUnread, .toggleUnread, .markOldestUnreadAndJumpNext,
              .focusRightSidebar, .switchRightSidebarToFiles, .switchRightSidebarToFind,
              .switchRightSidebarToSessions, .switchRightSidebarToFeed,
@@ -315,6 +318,8 @@ extension ShortcutAction {
         case .commandPalette: return "Command Palette…"
         case .commandPaletteNext: return "Command Palette: Next"
         case .commandPalettePrevious: return "Command Palette: Previous"
+        case .quickOpenCopyPath:
+            return String(localized: "shortcut.quickOpenCopyPath.label", defaultValue: "Quick Open: Copy Path")
         case .sendFeedback: return "Send Feedback"
         case .showNotifications: return "Show Notifications"
         case .jumpToUnread: return "Jump to Latest Unread"

@@ -6091,6 +6091,7 @@ extension Notification.Name {
     static let commandPaletteQuickRunCancelRequested = Notification.Name("cmux.commandPaletteQuickRunCancelRequested")
     static let commandPaletteSubmitRequested = Notification.Name("cmux.commandPaletteSubmitRequested")
     static let commandPaletteAlternateSubmitRequested = Notification.Name("cmux.commandPaletteAlternateSubmitRequested")
+    static let commandPaletteCopyPathRequested = Notification.Name("cmux.commandPaletteCopyPathRequested")
     static let commandPaletteDismissRequested = Notification.Name("cmux.commandPaletteDismissRequested")
     static let commandPaletteRenameTabRequested = Notification.Name("cmux.commandPaletteRenameTabRequested")
     static let commandPaletteRenameWorkspaceRequested = Notification.Name("cmux.commandPaletteRenameWorkspaceRequested")

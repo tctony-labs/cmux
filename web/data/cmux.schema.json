@@ -1160,6 +1160,7 @@
               "commandPalette",
               "commandPaletteNext",
               "commandPalettePrevious",
+              "quickOpenCopyPath",
               "sendFeedback",
               "showNotifications",
               "jumpToUnread",

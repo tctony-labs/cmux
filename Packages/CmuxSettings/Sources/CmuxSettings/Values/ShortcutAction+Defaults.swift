@@ -43,6 +43,7 @@ extension ShortcutAction {
         case .commandPalette: return ShortcutStroke(key: "p", command: true, shift: true)
         case .commandPaletteNext: return ShortcutStroke(key: "n", control: true)
         case .commandPalettePrevious: return ShortcutStroke(key: "p", control: true)
+        case .quickOpenCopyPath: return ShortcutStroke(key: "y", command: true)
         case .sendFeedback: return nil
         case .showNotifications: return ShortcutStroke(key: "i", command: true)
         case .jumpToUnread: return ShortcutStroke(key: "u", command: true, shift: true)

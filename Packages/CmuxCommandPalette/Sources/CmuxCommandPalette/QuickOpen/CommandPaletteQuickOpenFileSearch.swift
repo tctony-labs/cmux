@@ -441,6 +441,27 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         return nil
     }
 
+    /// Returns the path copied for a Quick Open result in the active search mode.
+    ///
+    /// - Parameters:
+    ///   - url: The selected Quick Open result.
+    ///   - workspaceRoot: The workspace root used by cross-directory search.
+    ///   - matchingQuery: The Quick Open query with its scope prefix removed.
+    /// - Returns: An absolute path for an explicit path query, or a workspace-relative path otherwise.
+    public static func pathForCopying(
+        _ url: URL,
+        workspaceRoot: String,
+        matchingQuery: String
+    ) -> String {
+        let trimmedQuery = matchingQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedQuery.hasPrefix("~")
+            || trimmedQuery.hasPrefix("/")
+            || trimmedQuery.hasPrefix("./") {
+            return url.path
+        }
+        return displayPath(url: url, rootDir: workspaceRoot) ?? url.path
+    }
+
     private static func searchCandidatePath(url: URL, rootDir: String, isDirectory: Bool) -> String {
         let path = relativePath(url: url, rootDir: rootDir)
         return isDirectory ? path + "/" : path

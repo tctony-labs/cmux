@@ -82,6 +82,7 @@ enum KeyboardShortcutSettings {
         case commandPalette
         case commandPaletteNext
         case commandPalettePrevious
+        case quickOpenCopyPath
         case sendFeedback
         case showNotifications
         case jumpToUnread
@@ -203,6 +204,8 @@ enum KeyboardShortcutSettings {
             case .commandPalette: return String(localized: "menu.file.commandPalette", defaultValue: "Command Palette…")
             case .commandPaletteNext: return String(localized: "shortcut.commandPaletteNext.label", defaultValue: "Command Palette: Next")
             case .commandPalettePrevious: return String(localized: "shortcut.commandPalettePrevious.label", defaultValue: "Command Palette: Previous")
+            case .quickOpenCopyPath:
+                return String(localized: "shortcut.quickOpenCopyPath.label", defaultValue: "Quick Open: Copy Path")
             case .sendFeedback: return String(localized: "sidebar.help.sendFeedback", defaultValue: "Send Feedback")
             case .showNotifications: return String(localized: "shortcut.showNotifications.label", defaultValue: "Show Notifications")
             case .jumpToUnread: return String(localized: "shortcut.jumpToUnread.label", defaultValue: "Jump to Latest Unread")
@@ -357,6 +360,8 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "n", command: false, shift: false, option: false, control: true)
             case .commandPalettePrevious:
                 return StoredShortcut(key: "p", command: false, shift: false, option: false, control: true)
+            case .quickOpenCopyPath:
+                return StoredShortcut(key: "y", command: true, shift: false, option: false, control: false)
             case .sendFeedback:
                 return .unbound
             case .showNotifications:
