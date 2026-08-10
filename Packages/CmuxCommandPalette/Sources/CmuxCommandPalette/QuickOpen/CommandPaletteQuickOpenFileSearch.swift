@@ -15,7 +15,7 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         workspaceRoot: String? = nil
     ) -> String {
         let trimmed = matchingQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("~") || trimmed.hasPrefix("/") || trimmed.hasPrefix("./") {
+        if isExplicitPathQuery(trimmed) {
             if let lastSlash = trimmed.lastIndex(of: "/") {
                 let term = String(trimmed[trimmed.index(after: lastSlash)...])
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -23,16 +23,8 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
                     let expanded: String
                     if trimmed.hasPrefix("~") {
                         expanded = NSHomeDirectory() + String(trimmed.dropFirst())
-                    } else if trimmed.hasPrefix("./") {
-                        let relative = String(trimmed.dropFirst(2))
-                        let trimmedRoot = workspaceRoot?.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let base: String
-                        if let trimmedRoot, !trimmedRoot.isEmpty {
-                            base = trimmedRoot
-                        } else {
-                            base = FileManager.default.currentDirectoryPath
-                        }
-                        expanded = relative.isEmpty ? base : base + "/" + relative
+                    } else if trimmed.hasPrefix("./") || trimmed.hasPrefix("../") {
+                        expanded = expandRelativePathQuery(trimmed, workspaceRoot: workspaceRoot)
                     } else {
                         expanded = trimmed
                     }
@@ -93,9 +85,8 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
             return (existingDir ?? root, remainder, true)
         }
 
-        if trimmed.hasPrefix("./") {
-            let relative = String(trimmed.dropFirst(2))
-            let expanded = relative.isEmpty ? root : root + "/" + relative
+        if trimmed.hasPrefix("./") || trimmed.hasPrefix("../") {
+            let expanded = expandRelativePathQuery(trimmed, workspaceRoot: root)
             let (existingDir, remainder) = resolveLongestExistingDirectory(expanded)
             return (existingDir ?? root, remainder, true)
         }
@@ -454,12 +445,29 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         matchingQuery: String
     ) -> String {
         let trimmedQuery = matchingQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedQuery.hasPrefix("~")
-            || trimmedQuery.hasPrefix("/")
-            || trimmedQuery.hasPrefix("./") {
+        if isExplicitPathQuery(trimmedQuery) {
             return url.path
         }
         return displayPath(url: url, rootDir: workspaceRoot) ?? url.path
+    }
+
+    private static func isExplicitPathQuery(_ query: String) -> Bool {
+        query.hasPrefix("~")
+            || query.hasPrefix("/")
+            || query.hasPrefix("./")
+            || query.hasPrefix("../")
+    }
+
+    private static func expandRelativePathQuery(_ query: String, workspaceRoot: String?) -> String {
+        let trimmedRoot = workspaceRoot?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = if let trimmedRoot, !trimmedRoot.isEmpty {
+            trimmedRoot
+        } else {
+            FileManager.default.currentDirectoryPath
+        }
+        return URL(fileURLWithPath: base, isDirectory: true)
+            .appendingPathComponent(query)
+            .standardizedFileURL.path
     }
 
     private static func searchCandidatePath(url: URL, rootDir: String, isDirectory: Bool) -> String {
