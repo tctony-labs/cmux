@@ -157,9 +157,9 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
 
     /// Computes the query path produced when Tab completes a Quick Open candidate.
     ///
-    /// Directory completion preserves the existing path-mode behavior. File
-    /// completion keeps the directory prefix already typed by the user, or
-    /// uses the candidate's workspace-relative path for a fuzzy search.
+    /// Relative-path completion keeps the directory prefix already typed by
+    /// the user. Other directory completion preserves the existing path-mode
+    /// behavior, while fuzzy file search uses the workspace-relative path.
     ///
     /// - Parameters:
     ///   - url: The candidate URL.
@@ -173,6 +173,11 @@ public struct CommandPaletteQuickOpenFileSearch: Sendable {
         currentMatchingTerm: String,
         isDirectory: Bool
     ) -> String {
+        if currentMatchingTerm.hasPrefix("./") || currentMatchingTerm.hasPrefix("../"),
+           let slashIndex = currentMatchingTerm.lastIndex(of: "/") {
+            let suffix = isDirectory ? "/" : ""
+            return String(currentMatchingTerm[...slashIndex]) + url.lastPathComponent + suffix
+        }
         if isDirectory {
             return directorySelectionPath(
                 for: url,

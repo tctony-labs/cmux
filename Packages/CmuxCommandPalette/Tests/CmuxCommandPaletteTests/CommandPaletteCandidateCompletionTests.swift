@@ -25,6 +25,10 @@ struct CommandPaletteCandidateCompletionTests {
         let root = "/tmp/workspace"
         let directory = URL(fileURLWithPath: root + "/Sources", isDirectory: true)
         let file = URL(fileURLWithPath: root + "/Sources/ContentView.swift")
+        let parentRelativeDirectory = URL(
+            fileURLWithPath: NSHomeDirectory() + "/Sibling",
+            isDirectory: true
+        )
 
         #expect(
             CommandPaletteQuickOpenFileSearch.candidateSelectionPath(
@@ -49,6 +53,14 @@ struct CommandPaletteCandidateCompletionTests {
                 currentMatchingTerm: "content",
                 isDirectory: false
             ) == "Sources/ContentView.swift"
+        )
+        #expect(
+            CommandPaletteQuickOpenFileSearch.candidateSelectionPath(
+                for: parentRelativeDirectory,
+                rootDir: NSHomeDirectory() + "/Develop/Projects",
+                currentMatchingTerm: "../../Sib",
+                isDirectory: true
+            ) == "../../Sibling/"
         )
     }
 
