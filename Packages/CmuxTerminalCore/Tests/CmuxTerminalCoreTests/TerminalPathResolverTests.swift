@@ -48,6 +48,13 @@ private func existsIn(_ existingPaths: Set<String>) -> @Sendable (String) -> Boo
                 == "/tmp/fixtures/notes.txt"
         )
     }
+
+    @Test func trimsTrailingCJKSentencePunctuation() {
+        #expect(
+            "/tmp/fixtures/notes.txt。".trimmingTrailingTerminalPunctuation()
+                == "/tmp/fixtures/notes.txt"
+        )
+    }
 }
 
 @Suite struct TerminalQuicklookPathResolutionTests {
@@ -320,5 +327,55 @@ private func existsIn(_ existingPaths: Set<String>) -> @Sendable (String) -> Boo
 
         #expect(resolution.path == existingFile)
         #expect(resolution.rawToken == "rules/tony.md")
+    }
+
+    @Test(arguments: [
+        (0, 40),
+        (1, 4),
+    ])
+    func resolvesTUIHardWrappedPathFromEitherRow(row: Int, column: Int) throws {
+        let cwd = "/Users/dev/project"
+        let relativePath =
+            ".agents/notes/implemented/architecture/" +
+            "2026-07-10-single-file-executable-sdk-runtime-distribution.md"
+        let existingFile = "\(cwd)/\(relativePath)"
+        let lines = [
+            "完整的设计取舍记录在 .agents/notes/implemented/architecture/" +
+                "2026-07-10-single-file-executable-sdk-runtime-",
+            "distribution.md。",
+        ]
+        let resolution = try #require(
+            TerminalPathResolver(fileExists: existsIn([existingFile])).resolveVisibleLinesPath(
+                lines,
+                row: row,
+                column: column,
+                cwd: cwd
+            )
+        )
+
+        #expect(resolution.path == existingFile)
+        #expect(resolution.rawToken == relativePath + "。")
+    }
+
+    @Test func resolvesHardWrappedPathAtCellColumnBeyondCharacterCount() throws {
+        let cwd = "/Users/dev/project"
+        let relativePath =
+            ".agents/notes/implemented/architecture/" +
+            "2026-07-10-single-file-executable-sdk-runtime-distribution.md"
+        let existingFile = "\(cwd)/\(relativePath)"
+        let firstLine =
+            "完整的设计取舍记录在 .agents/notes/implemented/architecture/" +
+            "2026-07-10-single-file-executable-sdk-runtime-"
+        let lines = [firstLine, "distribution.md。"]
+        let resolution = try #require(
+            TerminalPathResolver(fileExists: existsIn([existingFile])).resolveVisibleLinesPath(
+                lines,
+                row: 0,
+                column: firstLine.count + 5,
+                cwd: cwd
+            )
+        )
+
+        #expect(resolution.path == existingFile)
     }
 }
