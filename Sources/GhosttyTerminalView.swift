@@ -6741,8 +6741,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         guard visibleRow >= 0, visibleRow < visibleLines.count else { return nil }
 
         let column = max(0, min(cols - 1, viewportOffsetStart % cols))
-        guard let resolution = TerminalPathResolver().resolveVisibleLinePath(
-            visibleLines[visibleRow],
+        guard let resolution = TerminalPathResolver().resolveVisibleLinesPath(
+            visibleLines,
+            row: visibleRow,
             column: column,
             cwd: cwd
         ) else {
@@ -6791,8 +6792,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         guard visibleRow >= 0, visibleRow < visibleLines.count else { return nil }
 
         let column = max(0, min(cols - 1, Int((point.x - xInset) / resolvedCellWidth)))
-        guard let resolution = TerminalPathResolver().resolveVisibleLinePath(
-            visibleLines[visibleRow],
+        guard let resolution = TerminalPathResolver().resolveVisibleLinesPath(
+            visibleLines,
+            row: visibleRow,
             column: column,
             cwd: cwd
         ) else {

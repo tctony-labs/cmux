@@ -127,6 +127,81 @@ public struct TerminalPathResolver: Sendable {
         return nil
     }
 
+    /// Resolves a path under a visible terminal cell, including a path split
+    /// across a pair of adjacent hard rows by a full-screen terminal UI.
+    ///
+    /// Normal terminal soft wraps are already unwrapped by Ghostty. Some TUIs
+    /// redraw wrapped content as independent hard rows, however, so neither
+    /// fragment exists on disk by itself. This method first applies the usual
+    /// single-row rules, then joins only tokens that touch the adjoining row
+    /// edges and accepts the result only when the combined path exists.
+    ///
+    /// - Parameters:
+    ///   - lines: The terminal rows currently visible in the viewport.
+    ///   - row: The zero-based row under the cursor.
+    ///   - column: The zero-based column under the cursor.
+    ///   - cwd: The surface's working directory.
+    /// - Returns: The raw token plus its resolved path, or `nil`.
+    public func resolveVisibleLinesPath(
+        _ lines: [String],
+        row: Int,
+        column: Int,
+        cwd: String
+    ) -> (rawToken: String, path: String, lineNumber: Int?, columnNumber: Int?)? {
+        guard lines.indices.contains(row) else { return nil }
+
+        let line = lines[row]
+        if let resolution = resolveVisibleLinePath(line, column: column, cwd: cwd) {
+            return resolution
+        }
+
+        let clickedTokens = line.pathTokenCandidates(containingColumn: column)
+        guard !clickedTokens.isEmpty else { return nil }
+
+        if row > lines.startIndex {
+            let leadingTokens = line.leadingPathTokenCandidates()
+            let previousTokens = lines[row - 1].trailingPathTokenCandidates()
+            if let resolution = resolveJoinedVisiblePath(
+                leftTokens: previousTokens,
+                rightTokens: clickedTokens.filter(leadingTokens.contains),
+                cwd: cwd
+            ) {
+                return resolution
+            }
+        }
+
+        if row < lines.index(before: lines.endIndex) {
+            let trailingTokens = line.trailingPathTokenCandidates()
+            let nextTokens = lines[row + 1].leadingPathTokenCandidates()
+            if let resolution = resolveJoinedVisiblePath(
+                leftTokens: clickedTokens.filter(trailingTokens.contains),
+                rightTokens: nextTokens,
+                cwd: cwd
+            ) {
+                return resolution
+            }
+        }
+
+        return nil
+    }
+
+    private func resolveJoinedVisiblePath(
+        leftTokens: [String],
+        rightTokens: [String],
+        cwd: String
+    ) -> (rawToken: String, path: String, lineNumber: Int?, columnNumber: Int?)? {
+        for leftToken in leftTokens {
+            for rightToken in rightTokens {
+                let rawToken = leftToken + rightToken
+                guard let reference = resolveQuicklookFileReference(rawToken, cwd: cwd) else {
+                    continue
+                }
+                return (rawToken, reference.path, reference.lineNumber, reference.columnNumber)
+            }
+        }
+        return nil
+    }
+
     /// Resolves an open-URL request payload to an existing file path.
     ///
     /// Text that parses as a URL with a scheme is never treated as a file

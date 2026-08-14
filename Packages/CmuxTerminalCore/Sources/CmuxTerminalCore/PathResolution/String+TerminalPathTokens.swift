@@ -8,7 +8,7 @@ import Foundation
 
 extension String {
     private static let sentencePunctuation: Set<Character> = [
-        ".", ",", ";", ":", "!", "?"
+        ".", ",", ";", ":", "!", "?", "。", "，", "；", "：", "！", "？"
     ]
 
     private static let trailingQuotes: Set<Character> = [
@@ -203,6 +203,7 @@ extension String {
     /// raw whitespace-delimited segment first, then the shell-escape-aware
     /// token.
     func pathTokenCandidates(containingColumn column: Int) -> [String] {
+        guard let characterColumn = characterIndex(containingTerminalColumn: column) else { return [] }
         var candidates: [String] = []
 
         func append(_ candidate: String?) {
@@ -212,10 +213,24 @@ extension String {
             candidates.append(trimmed)
         }
 
-        append(rawPathSegment(containingColumn: column))
-        append(shellEscapedToken(containingColumn: column))
+        append(rawPathSegment(containingColumn: characterColumn))
+        append(shellEscapedToken(containingColumn: characterColumn))
 
         return candidates
+    }
+
+    /// Path-token candidates that begin at the first terminal character.
+    func leadingPathTokenCandidates() -> [String] {
+        guard let firstNonWhitespace = firstIndex(where: { !$0.isWhitespace }) else { return [] }
+        guard firstNonWhitespace == startIndex else { return [] }
+        return pathTokenCandidates(containingColumn: terminalColumn(at: firstNonWhitespace))
+    }
+
+    /// Path-token candidates that end at the final terminal character.
+    func trailingPathTokenCandidates() -> [String] {
+        guard let lastNonWhitespace = lastIndex(where: { !$0.isWhitespace }) else { return [] }
+        guard index(after: lastNonWhitespace) == endIndex else { return [] }
+        return pathTokenCandidates(containingColumn: terminalColumn(at: lastNonWhitespace))
     }
 
     /// Returns the repository-relative path under a git diff file header.
@@ -230,17 +245,38 @@ extension String {
             return nil
         }
 
+        guard let characterColumn = characterIndex(containingTerminalColumn: column) else { return nil }
         let characters = Array(self)
         let tokenStart = marker.count - 2
-        guard column >= tokenStart, column < characters.count else { return nil }
+        guard characterColumn >= tokenStart, characterColumn < characters.count else { return nil }
 
         let pathStart = marker.count
         let pathEnd = characters[pathStart...].firstIndex(of: "\t") ?? characters.endIndex
-        guard column < pathEnd, pathStart < pathEnd else { return nil }
+        guard characterColumn < pathEnd, pathStart < pathEnd else { return nil }
 
         let path = String(characters[pathStart..<pathEnd])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return path.isEmpty ? nil : path
+    }
+
+    private func characterIndex(containingTerminalColumn column: Int) -> Int? {
+        guard column >= 0 else { return nil }
+
+        var terminalColumn = 0
+        for (characterIndex, character) in enumerated() {
+            let nextColumn = terminalColumn + character.terminalCellWidth
+            if column < nextColumn {
+                return characterIndex
+            }
+            terminalColumn = nextColumn
+        }
+        return nil
+    }
+
+    private func terminalColumn(at index: String.Index) -> Int {
+        self[..<index].reduce(into: 0) { column, character in
+            column += character.terminalCellWidth
+        }
     }
 
     private func rawPathSegment(containingColumn column: Int) -> String? {
@@ -301,6 +337,38 @@ extension String {
         }
 
         return nil
+    }
+}
+
+extension Character {
+    /// Terminal cell width for mapping a viewport column back to the visible
+    /// grapheme. A grapheme containing a wide scalar occupies two cells;
+    /// joined and combining scalars do not add another cell.
+    fileprivate var terminalCellWidth: Int {
+        unicodeScalars.contains(where: \.isWideTerminalScalar) ? 2 : 1
+    }
+}
+
+extension Unicode.Scalar {
+    /// Unicode ranges conventionally rendered as two terminal cells.
+    fileprivate var isWideTerminalScalar: Bool {
+        switch value {
+        case 0x1100...0x115F,
+             0x2329...0x232A,
+             0x2E80...0x303E,
+             0x3040...0xA4CF,
+             0xAC00...0xD7A3,
+             0xF900...0xFAFF,
+             0xFE10...0xFE19,
+             0xFE30...0xFE6F,
+             0xFF00...0xFF60,
+             0xFFE0...0xFFE6,
+             0x1F300...0x1FAFF,
+             0x20000...0x3FFFD:
+            return true
+        default:
+            return false
+        }
     }
 }
 
