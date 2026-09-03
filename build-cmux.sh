@@ -19,6 +19,7 @@ trap print_elapsed_time EXIT
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CMUX_REPO="${CMUX_REPO:-$SCRIPT_DIR}"
 DERIVED_DATA="${CMUX_DERIVED_DATA:-$HOME/Library/Developer/Xcode/DerivedData/cmux-release-local}"
+SPM_CACHE="${CMUX_SPM_CACHE:-}"
 BUNDLE_ID="${CMUX_BUNDLE_ID:-com.tctony.cmux}"
 SIGNING_IDENTITY="${CMUX_SIGNING_IDENTITY:-Apple Development: chang tang (QLFYDXFVK8)}"
 DEVELOPMENT_TEAM="${CMUX_DEVELOPMENT_TEAM:-NSWMLDGCEZ}"
@@ -78,6 +79,14 @@ echo "==> Ensuring ghosttykit..."
 echo "==> using zig: $("$CMUX_ZIG" version) ($CMUX_ZIG)"
 echo "==> bundle id: $BUNDLE_ID"
 echo "==> signing: $SIGNING_IDENTITY (team $DEVELOPMENT_TEAM)"
+XCODEBUILD_CACHE_ARGS=()
+if [[ -n "$SPM_CACHE" ]]; then
+  mkdir -p "$SPM_CACHE"
+  XCODEBUILD_CACHE_ARGS+=(
+    -clonedSourcePackagesDirPath "$SPM_CACHE"
+  )
+  echo "==> SwiftPM cache: $SPM_CACHE"
+fi
 echo "==> building cmux Release app"
 xcodebuild \
   -project cmux.xcodeproj \
@@ -85,6 +94,7 @@ xcodebuild \
   -configuration Release \
   -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \
+  "${XCODEBUILD_CACHE_ARGS[@]+"${XCODEBUILD_CACHE_ARGS[@]}"}" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
   CODE_SIGN_ENTITLEMENTS="" \

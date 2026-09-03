@@ -43,6 +43,50 @@ jobs:
           echo "APPCAST_PATH=$RUNNER_TEMP/appcast.xml" >> "$GITHUB_ENV"
           echo "DMG_PATH=$RUNNER_TEMP/cmux-tctony.dmg" >> "$GITHUB_ENV"
 
+      - name: Set cache metadata
+        id: cache-metadata
+        run: |
+          set -euo pipefail
+          GHOSTTY_SHA="$(git -C ghostty rev-parse HEAD)"
+          GHOSTTY_INPUTS_KEY="$(
+            git hash-object \
+              scripts/ensure-ghosttykit.sh \
+              scripts/ghosttykit-checksums.txt \
+              scripts/validate-xcframework-archive.py \
+              ghostty.h \
+              | shasum -a 256 \
+              | awk '{print substr($1, 1, 12)}'
+          )"
+          XCODE_KEY="$(xcodebuild -version | shasum -a 256 | awk '{print substr($1, 1, 12)}')"
+          SWIFTPM_KEY="$(
+            shasum -a 256 \
+              cmux.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
+              | awk '{print substr($1, 1, 12)}'
+          )"
+          echo "derived_prefix=derived-data-$RUNNER_OS-$RUNNER_ARCH-$XCODE_KEY" >> "$GITHUB_OUTPUT"
+          echo "ghostty_key=ghosttykit-$RUNNER_OS-$RUNNER_ARCH-$GHOSTTY_SHA-$GHOSTTY_INPUTS_KEY" >> "$GITHUB_OUTPUT"
+          echo "swiftpm_key=swiftpm-$RUNNER_OS-$RUNNER_ARCH-$XCODE_KEY-$SWIFTPM_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Cache GhosttyKit
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/cmux/ghosttykit
+          key: ${{ steps.cache-metadata.outputs.ghostty_key }}
+
+      - name: Cache SwiftPM
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ github.workspace }}/.spm-cache
+          key: ${{ steps.cache-metadata.outputs.swiftpm_key }}
+
+      - name: Cache DerivedData
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ runner.temp }}/cmux-tctony
+          key: ${{ steps.cache-metadata.outputs.derived_prefix }}-${{ github.sha }}
+          restore-keys: |
+            ${{ steps.cache-metadata.outputs.derived_prefix }}-
+
       - name: Validate organization signing configuration
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.MACOS_APPLICATION_CERT_P12 }}
@@ -135,6 +179,7 @@ jobs:
           CMUX_REPO: ${{ github.workspace }}
           CMUX_REVEAL_IN_FINDER: 0
           CMUX_SIGNING_IDENTITY: ${{ vars.MACOS_APPLICATION_CERT_NAME }}
+          CMUX_SPM_CACHE: ${{ github.workspace }}/.spm-cache
         run: ./build-cmux.sh
 
       - name: Configure Sparkle for tctony release
