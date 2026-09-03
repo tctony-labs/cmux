@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Guard release/nightly provenance attestation against transient Sigstore/Rekor
+# Guard nightly provenance attestation against transient Sigstore/Rekor
 # network failures without making attestation optional.
 set -euo pipefail
 
@@ -48,10 +48,3 @@ check_attestation_retry \
   "attest-remote-daemon-nightly-assets" \
   "Retry remote daemon nightly asset attestation" \
   'remote-daemon-assets/cmuxd-remote-manifest-${{ env.NIGHTLY_BUILD }}.json'
-
-check_attestation_retry \
-  "$ROOT_DIR/.github/workflows/release.yml" \
-  "Attest remote daemon release assets" \
-  "attest-remote-daemon-release-assets" \
-  "Retry remote daemon release asset attestation" \
-  "remote-daemon-assets/cmuxd-remote-manifest.json"

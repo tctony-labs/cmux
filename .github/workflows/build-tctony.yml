@@ -2,6 +2,26 @@ name: Build tctony cmux package
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Optional release tag for a signed Sparkle dry run
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      release_tag:
+        description: Release tag used to configure Sparkle and generate appcast.xml
+        required: false
+        type: string
+    secrets:
+      APPLE_ID_PASS:
+        required: true
+      MACOS_APPLICATION_CERT_P12:
+        required: true
+      MACOS_APPLICATION_CERT_P12_PASS:
+        required: true
+      SPARKLE_PRIVATE_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -20,6 +40,7 @@ jobs:
       - name: Set package paths
         run: |
           echo "APP_PATH=$RUNNER_TEMP/cmux-tctony/Build/Products/Release/cmux.app" >> "$GITHUB_ENV"
+          echo "APPCAST_PATH=$RUNNER_TEMP/appcast.xml" >> "$GITHUB_ENV"
           echo "DMG_PATH=$RUNNER_TEMP/cmux-tctony.dmg" >> "$GITHUB_ENV"
 
       - name: Validate organization signing configuration
@@ -30,6 +51,8 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
           APPLE_SIGNING_IDENTITY: ${{ vars.MACOS_APPLICATION_CERT_NAME }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           missing=()
@@ -46,6 +69,29 @@ jobs:
           done
           if (( ${#missing[@]} > 0 )); then
             printf 'Missing organization signing configuration: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+          if [[ -n "$RELEASE_TAG" && -z "$SPARKLE_PRIVATE_KEY" ]]; then
+            echo "Missing SPARKLE_PRIVATE_KEY for release build" >&2
+            exit 1
+          fi
+
+      - name: Validate release tag
+        if: inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(
+            sed -n 's/^[[:space:]]*MARKETING_VERSION = \([^;]*\);/\1/p' cmux.xcodeproj/project.pbxproj \
+              | sort -u
+          )"
+          if [[ -z "$APP_VERSION" || "$APP_VERSION" == *$'\n'* ]]; then
+            echo "Unable to determine one MARKETING_VERSION from cmux.xcodeproj" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_TAG" != "v$APP_VERSION" ]]; then
+            echo "Release tag $RELEASE_TAG does not match app version v$APP_VERSION" >&2
             exit 1
           fi
 
@@ -90,6 +136,23 @@ jobs:
           CMUX_REVEAL_IN_FINDER: 0
           CMUX_SIGNING_IDENTITY: ${{ vars.MACOS_APPLICATION_CERT_NAME }}
         run: ./build-cmux.sh
+
+      - name: Configure Sparkle for tctony release
+        if: inputs.release_tag != ''
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          APP_PLIST="$APP_PATH/Contents/Info.plist"
+          SPARKLE_PUBLIC_KEY="$(swift scripts/derive_sparkle_public_key.swift "$SPARKLE_PRIVATE_KEY")"
+          /usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$APP_PLIST" >/dev/null 2>&1 || true
+          /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$APP_PLIST" >/dev/null 2>&1 || true
+          /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_KEY" "$APP_PLIST"
+          /usr/libexec/PlistBuddy \
+            -c "Add :SUFeedURL string https://github.com/tctony-labs/cmux/releases/latest/download/appcast.xml" \
+            "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP_PLIST"
 
       - name: Re-sign app for distribution
         env:
@@ -146,11 +209,31 @@ jobs:
           xcrun stapler staple "$DMG_PATH"
           xcrun stapler validate "$DMG_PATH"
 
+      - name: Generate Sparkle appcast
+        if: inputs.release_tag != ''
+        env:
+          DOWNLOAD_URL_PREFIX: https://github.com/tctony-labs/cmux/releases/download/${{ inputs.release_tag }}/
+          RELEASE_NOTES_URL: https://github.com/tctony-labs/cmux/releases/tag/${{ inputs.release_tag }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: ./scripts/sparkle_generate_appcast.sh "$DMG_PATH" "${{ inputs.release_tag }}" "$APPCAST_PATH"
+
       - name: Upload DMG
+        if: inputs.release_tag == ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cmux-tctony
           path: ${{ runner.temp }}/cmux-tctony.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release assets
+        if: inputs.release_tag != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cmux-tctony-release
+          path: |
+            ${{ runner.temp }}/cmux-tctony.dmg
+            ${{ runner.temp }}/appcast.xml
           if-no-files-found: error
           retention-days: 14
 

@@ -3,11 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CI_FILE="$ROOT_DIR/.github/workflows/ci.yml"
-RELEASE_FILE="$ROOT_DIR/.github/workflows/release.yml"
 
 # nightly.yml is intentionally not covered here. It has its own helper-build
 # model and guards via test_ci_nightly_xcode_selection.sh plus
-# test_nightly_universal_build.sh. This lane guards the release/CI
+# test_nightly_universal_build.sh. This lane guards the CI release-build
 # artifact-download model.
 
 job_section() {
@@ -30,18 +29,6 @@ require_job_contains() {
 }
 
 require_job_contains \
-  "$RELEASE_FILE" \
-  "build-ghostty-cli-helper" \
-  'runs-on: ${{ vars.MACOS_RUNNER_15 || '\''warp-macos-15-arm64-6x'\'' }}' \
-  "release must build the real Ghostty CLI helper on macOS 15"
-
-require_job_contains \
-  "$RELEASE_FILE" \
-  "build-sign-notarize" \
-  'runs-on: ${{ vars.MACOS_RUNNER_26 || '\''warp-macos-26-arm64-6x'\'' }}' \
-  "release must build the app on macOS 26"
-
-require_job_contains \
   "$CI_FILE" \
   "release-ghostty-cli-helper" \
   'runs-on: ${{ vars.MACOS_RUNNER_15 || '\''warp-macos-15-arm64-6x'\'' }}' \
@@ -53,7 +40,7 @@ require_job_contains \
   'runs-on: ${{ vars.MACOS_RUNNER_26 || '\''warp-macos-26-arm64-6x'\'' }}' \
   "CI release-build must compile the app on macOS 26"
 
-for workflow in "$CI_FILE" "$RELEASE_FILE"; do
+for workflow in "$CI_FILE"; do
   if ! grep -Fq "CMUX_SKIP_ZIG_BUILD=1 xcodebuild" "$workflow"; then
     echo "FAIL: $(basename "$workflow") must skip the in-build Zig helper on macOS 26" >&2
     exit 1
@@ -75,4 +62,4 @@ for workflow in "$CI_FILE" "$RELEASE_FILE"; do
   fi
 done
 
-echo "PASS: release and CI app builds use macOS 26 SDK with a macOS 15-built Ghostty CLI helper"
+echo "PASS: CI release build uses macOS 26 SDK with a macOS 15-built Ghostty CLI helper"

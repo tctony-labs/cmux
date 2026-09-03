@@ -258,3 +258,52 @@ Core skill map:
 ```
 
 只有修改会被 `cmux` scheme 编译或打包进 App 的源码、资源或工程配置后，才运行上述 reload。仅修改独立脚本（包括 `build-cmux.sh`）、文档、测试、CI 配置、Agent instructions 或其他不进入 App 构建产物的文件时，不要运行 reload；改用与改动直接相关的最小验证。用户明确要求 reload 时除外。
+
+## tctony release workflow
+
+本节覆盖上方的 `Release` 说明；在 `tctony-labs/cmux` fork 中发布版本时，以本节为准。
+
+发布流程与 `tctony-labs/EmacsCtl` 一致：由 release workflow 调用可复用的构建 workflow，完成 App 构建、签名、公证、DMG 打包、GitHub Release 创建和 Sparkle 更新文件发布。
+
+- Release workflow：`.github/workflows/release-tctony.yml`
+- 可复用构建 workflow：`.github/workflows/build-tctony.yml`
+- Release 资产：`cmux-tctony.dmg`、`appcast.xml`
+- Sparkle feed：`https://github.com/tctony-labs/cmux/releases/latest/download/appcast.xml`
+
+发布前：
+
+1. 更新 `CHANGELOG.md`。
+2. 使用 `./scripts/bump-version.sh` 更新 `MARKETING_VERSION` 和 `CURRENT_PROJECT_VERSION`。
+3. 提交并推送版本与 changelog 变更。
+4. 确保发布 tag 为 `v<MARKETING_VERSION>`，例如版本 `0.64.15` 对应 `v0.64.15`。
+
+推荐通过 tag push 发布：
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+gh run watch --repo tctony-labs/cmux
+```
+
+也可以像 EmacsCtl 一样手动触发，并传入相同格式的 tag：
+
+```bash
+gh workflow run release-tctony.yml \
+  --repo tctony-labs/cmux \
+  -f tag=vX.Y.Z
+```
+
+发布 workflow 会校验 tag 与 App 版本是否一致，然后：
+
+1. 调用 `build-tctony.yml`。
+2. 复用组织级 Apple 证书完成签名和公证。
+3. 从 `SPARKLE_PRIVATE_KEY` 派生公钥，将 tctony Sparkle feed 和公钥注入 App。
+4. 生成带 EdDSA 签名的 `appcast.xml`。
+5. 创建对应 tag 的 GitHub Release，并上传 DMG 和 appcast。
+
+需要以下组织级配置：
+
+- Variables：`APPLE_ID`、`APPLE_TEAM_ID`、`MACOS_APPLICATION_CERT_NAME`
+- Secrets：`APPLE_ID_PASS`、`MACOS_APPLICATION_CERT_P12`、`MACOS_APPLICATION_CERT_P12_PASS`、`SPARKLE_PRIVATE_KEY`
+
+不要恢复或使用上游 `manaflow-ai` 的 `.github/workflows/release.yml`，以免同一个 tag 同时触发两套 release workflow。

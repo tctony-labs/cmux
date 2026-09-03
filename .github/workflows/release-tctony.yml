@@ -1,0 +1,47 @@
+name: Release tctony cmux
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag matching the app version, for example v0.64.15
+        required: true
+        type: string
+
+concurrency:
+  group: release-tctony-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-package:
+    uses: ./.github/workflows/build-tctony.yml
+    with:
+      release_tag: ${{ inputs.tag || github.ref_name }}
+    secrets: inherit
+
+  publish-release:
+    needs: build-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: cmux-tctony-release
+          path: release-assets
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            release-assets/cmux-tctony.dmg
+            release-assets/appcast.xml
+          generate_release_notes: true
+          overwrite_files: false

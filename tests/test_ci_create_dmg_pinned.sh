@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Regression test for https://github.com/manaflow-ai/cmux/issues/387.
-# Ensures release workflows pin create-dmg to an explicit version.
+# Ensures the nightly release workflow pins create-dmg to an explicit version.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 WORKFLOWS=(
-  "$ROOT_DIR/.github/workflows/release.yml"
   "$ROOT_DIR/.github/workflows/nightly.yml"
 )
 
@@ -22,4 +21,4 @@ for workflow in "${WORKFLOWS[@]}"; do
   fi
 done
 
-echo "PASS: create-dmg install is pinned in release workflows"
+echo "PASS: create-dmg install is pinned in the nightly release workflow"
