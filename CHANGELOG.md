@@ -2,6 +2,11 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.19] - 2026-09-03
+
+### Changed
+- No application changes; this release validates reuse of the cached Zig toolchain in the tctony-labs release workflow.
+
 ## [0.64.18] - 2026-09-03
 
 ### Changed
