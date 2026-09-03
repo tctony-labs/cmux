@@ -9,6 +9,7 @@ set -euo pipefail
 #   ./scripts/bump-version.sh major     # Bump major (0.15.0 -> 1.0.0)
 
 PROJECT_FILE="cmux.xcodeproj/project.pbxproj"
+RELEASE_APPCAST_URL="${CMUX_RELEASE_APPCAST_URL:-https://github.com/tctony-labs/cmux/releases/latest/download/appcast.xml}"
 
 if [[ ! -f "$PROJECT_FILE" ]]; then
   echo "Error: $PROJECT_FILE not found. Run from repo root." >&2
@@ -25,7 +26,7 @@ echo "Current: MARKETING_VERSION=$CURRENT_MARKETING, CURRENT_PROJECT_VERSION=$CU
 # Keep Sparkle build numbers monotonic with the latest published stable appcast.
 # If local build numbers have fallen behind due merges/rebases, auto-correct upward.
 LATEST_RELEASE_BUILD="$(
-  curl -fsSL --max-time 8 https://github.com/manaflow-ai/cmux/releases/latest/download/appcast.xml 2>/dev/null \
+  curl -fsSL --max-time 8 "$RELEASE_APPCAST_URL" 2>/dev/null \
     | sed -n 's#.*<sparkle:version>\([0-9][0-9]*\)</sparkle:version>.*#\1#p' \
     | head -n1
 )"

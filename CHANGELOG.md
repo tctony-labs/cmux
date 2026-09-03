@@ -2,6 +2,13 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.18] - 2026-09-03
+
+### Changed
+- The tctony-labs macOS release now targets Apple silicon (`arm64`) only.
+- Faster tctony-labs release setup by caching Zig and preferring the official Zig download source.
+- Sparkle build-number checks now use the tctony-labs update feed.
+
 ## [0.64.17] - 2026-09-03
 
 ### Changed
