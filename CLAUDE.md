@@ -265,6 +265,8 @@ Core skill map:
 
 发布流程与 `tctony-labs/EmacsCtl` 一致：由 release workflow 调用可复用的构建 workflow，完成 App 构建、签名、公证、DMG 打包、GitHub Release 创建和 Sparkle 更新文件发布。
 
+Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmux.sh`。本地只运行 workflow 和脚本的静态检查、受影响的 CI 测试、`git diff --check` 与 `./scripts/release-pretag-guard.sh`；实际 App 构建、签名、公证和打包只在 tag 触发的 GitHub Actions 中执行。本规则覆盖上方 `tctony fork` 中修改工程配置后需要 reload 的一般规则。
+
 - Release workflow：`.github/workflows/release-tctony.yml`
 - 可复用构建 workflow：`.github/workflows/build-tctony.yml`
 - Release 资产：`cmux-tctony.dmg`、`appcast.xml`

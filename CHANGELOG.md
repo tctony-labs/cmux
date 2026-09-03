@@ -2,6 +2,18 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.16] - 2026-09-03
+
+### Added
+- Signed and notarized tctony-labs macOS releases with a dedicated Sparkle update feed.
+- Quick Open actions for opening directories in new workspaces, copying selected paths, and resolving parent-relative queries while preserving logical and symlinked paths.
+- Command palette quick-run mode, Tab completion, and a Claude Code hook installer.
+
+### Fixed
+- Terminal file references now handle Cmd-click, line-and-column suffixes, and hard-wrapped paths reliably.
+- Recent workspace history, dynamic menus, and closed-window workspace filtering stay in sync.
+- Agent notifications and status cleanup are more reliable across Claude, Codex, and Cursor sessions.
+
 ## [0.64.15] - 2026-06-12
 
 ### Added
