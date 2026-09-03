@@ -2,6 +2,11 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.17] - 2026-09-03
+
+### Changed
+- Improved the reliability and speed of tctony-labs release builds with pinned macOS and Xcode versions and reusable build caches.
+
 ## [0.64.16] - 2026-09-03
 
 ### Added
