@@ -49,6 +49,9 @@ jobs:
             exit 1
           fi
 
+      - name: Test Nucleo FFI artifact verifier
+        run: ./tests/test_nucleo_ffi_artifact_verifier.sh
+
       - name: Install Zig
         run: ./scripts/install-zig-ci.sh
 
