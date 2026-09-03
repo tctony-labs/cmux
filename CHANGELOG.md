@@ -2,6 +2,11 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.20] - 2026-09-03
+
+### Fixed
+- Prevent stale Xcode module caches from breaking tctony-labs release builds across GitHub-hosted runners.
+
 ## [0.64.19] - 2026-09-03
 
 ### Changed
