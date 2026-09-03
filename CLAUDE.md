@@ -272,6 +272,8 @@ Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmu
 - Release 资产：`cmux-tctony.dmg`、`appcast.xml`
 - Sparkle feed：`https://github.com/tctony-labs/cmux/releases/latest/download/appcast.xml`
 
+此 fork 的 `.github/workflows/` 只保留上述两个 tctony workflow。除非用户明确要求，不要恢复上游的 CI、nightly、Cloud VM、TestFlight、Homebrew 或其他 GitHub Actions workflow。
+
 发布前：
 
 1. 更新 `CHANGELOG.md`。

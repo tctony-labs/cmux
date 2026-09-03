@@ -9,26 +9,6 @@ cd "$ROOT_DIR"
 
 LOG="$TMP_DIR/build.log"
 BUDGET="$TMP_DIR/budget.tsv"
-CI_FILE="$ROOT_DIR/.github/workflows/ci.yml"
-
-python3 - "$CI_FILE" <<'PY'
-import pathlib
-import sys
-
-ci_text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
-required_tokens = {
-    "workflow guard step": "Validate Swift warning budget guard",
-    "guard test script": "./tests/test_ci_swift_warning_budget.sh",
-    "build log tee": "tee",
-    "build log path": "cmux-build-output.txt",
-    "budget script": "scripts/swift_warning_budget.py",
-    "budget log argument": "--log",
-}
-
-missing = [label for label, token in required_tokens.items() if token not in ci_text]
-if missing:
-    raise SystemExit(f"missing Swift warning budget CI wiring: {', '.join(missing)}")
-PY
 
 cat >"$LOG" <<'LOG'
 /Users/example/cmux/Sources/AppDelegate.swift:10:1: warning: add '@preconcurrency' to suppress 'Sendable'-related warnings from module 'ObjectiveC'
