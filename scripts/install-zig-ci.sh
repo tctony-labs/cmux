@@ -5,9 +5,29 @@ ZIG_REQUIRED="${ZIG_REQUIRED:-0.15.2}"
 ZIG_MINISIGN_PUBLIC_KEY="${ZIG_MINISIGN_PUBLIC_KEY:-RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U}"
 ZIG_INDEX_URL="${ZIG_INDEX_URL:-https://ziglang.org/download/index.json}"
 ZIG_EXPECTED_SHA256="${ZIG_EXPECTED_SHA256:-}"
+ZIG_CACHE_ROOT="${ZIG_CACHE_ROOT:-$HOME/.cache/cmux/zig}"
 export HOMEBREW_NO_AUTO_UPDATE="${HOMEBREW_NO_AUTO_UPDATE:-1}"
 export HOMEBREW_NO_INSTALL_CLEANUP="${HOMEBREW_NO_INSTALL_CLEANUP:-1}"
 export HOMEBREW_NO_ENV_HINTS="${HOMEBREW_NO_ENV_HINTS:-1}"
+
+case "$(uname -m)" in
+  arm64 | aarch64) ZIG_ARCH="aarch64" ;;
+  x86_64) ZIG_ARCH="x86_64" ;;
+  *)
+    echo "Unsupported macOS architecture: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+ZIG_NAME="zig-${ZIG_ARCH}-macos-${ZIG_REQUIRED}"
+ZIG_TAR="/tmp/${ZIG_NAME}.tar.xz"
+ZIG_SIG="${ZIG_TAR}.minisig"
+ZIG_EXTRACT_DIR="/tmp/${ZIG_NAME}"
+ZIG_INSTALL_DIR="${ZIG_CACHE_ROOT}/${ZIG_NAME}"
+ZIG_BIN="${ZIG_INSTALL_DIR}/zig"
+ZIG_OFFICIAL_URL="https://ziglang.org/download/${ZIG_REQUIRED}/${ZIG_NAME}.tar.xz"
+ZIG_MIRROR_URL="${ZIG_MIRROR_URL:-https://zigmirror.hryx.net/zig/${ZIG_NAME}.tar.xz}"
+ZIG_INDEX_ARCH="${ZIG_ARCH}-macos"
 
 publish_zig_for_later_steps() {
   local zig_path="$1"
@@ -25,13 +45,14 @@ publish_zig_for_later_steps() {
 zig_has_required_version() {
   local zig_path="$1"
   [ -x "$zig_path" ] || return 1
-  [ "$("$zig_path" version 2>/dev/null || true)" = "$ZIG_REQUIRED" ]
+  [ "$("$zig_path" version 2>/dev/null || true)" = "$ZIG_REQUIRED" ] || return 1
+  "$zig_path" env >/dev/null 2>&1
 }
 
 use_existing_zig_if_available() {
   local candidate
   local seen=" "
-  for candidate in "$(command -v zig 2>/dev/null || true)" /opt/homebrew/bin/zig /usr/local/bin/zig; do
+  for candidate in "$ZIG_BIN" "$(command -v zig 2>/dev/null || true)" /opt/homebrew/bin/zig /usr/local/bin/zig; do
     [ -n "$candidate" ] || continue
     [ -x "$candidate" ] || continue
     candidate="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
@@ -49,23 +70,6 @@ use_existing_zig_if_available() {
 
 use_existing_zig_if_available
 
-case "$(uname -m)" in
-  arm64 | aarch64) ZIG_ARCH="aarch64" ;;
-  x86_64) ZIG_ARCH="x86_64" ;;
-  *)
-    echo "Unsupported macOS architecture: $(uname -m)" >&2
-    exit 1
-    ;;
-esac
-
-ZIG_NAME="zig-${ZIG_ARCH}-macos-${ZIG_REQUIRED}"
-ZIG_TAR="/tmp/${ZIG_NAME}.tar.xz"
-ZIG_SIG="${ZIG_TAR}.minisig"
-ZIG_DIR="/tmp/${ZIG_NAME}"
-ZIG_OFFICIAL_URL="https://ziglang.org/download/${ZIG_REQUIRED}/${ZIG_NAME}.tar.xz"
-ZIG_MIRROR_URL="${ZIG_MIRROR_URL:-https://zigmirror.hryx.net/zig/${ZIG_NAME}.tar.xz}"
-ZIG_INDEX_ARCH="${ZIG_ARCH}-macos"
-
 download_file() {
   local url="$1"
   local output="$2"
@@ -74,11 +78,11 @@ download_file() {
     --location \
     --show-error \
     --connect-timeout 20 \
-    --max-time 300 \
-    --retry 8 \
+    --max-time 180 \
+    --retry 3 \
     --retry-all-errors \
-    --retry-delay 10 \
-    --retry-max-time 300 \
+    --retry-delay 2 \
+    --retry-max-time 60 \
     "$url" \
     --output "$output"
 }
@@ -119,28 +123,28 @@ verify_zig_sha256() {
 
 echo "Installing verified zig ${ZIG_REQUIRED}"
 rm -f "$ZIG_TAR" "$ZIG_SIG"
-if ! download_file "$ZIG_MIRROR_URL" "$ZIG_TAR"; then
-  echo "Mirror download failed; retrying from ${ZIG_OFFICIAL_URL}" >&2
-  download_file "$ZIG_OFFICIAL_URL" "$ZIG_TAR"
+if ! download_file "$ZIG_OFFICIAL_URL" "$ZIG_TAR"; then
+  echo "Official download failed; retrying from ${ZIG_MIRROR_URL}" >&2
+  download_file "$ZIG_MIRROR_URL" "$ZIG_TAR"
 fi
 ZIG_RESOLVED_SHA256="$(resolve_zig_sha256)"
 verify_zig_sha256 "$ZIG_RESOLVED_SHA256"
 
 if command -v minisign >/dev/null 2>&1; then
-  if ! download_file "${ZIG_MIRROR_URL}.minisig" "$ZIG_SIG"; then
-    echo "Mirror signature download failed; retrying from ${ZIG_OFFICIAL_URL}.minisig" >&2
-    download_file "${ZIG_OFFICIAL_URL}.minisig" "$ZIG_SIG"
+  if ! download_file "${ZIG_OFFICIAL_URL}.minisig" "$ZIG_SIG"; then
+    echo "Official signature download failed; retrying from ${ZIG_MIRROR_URL}.minisig" >&2
+    download_file "${ZIG_MIRROR_URL}.minisig" "$ZIG_SIG"
   fi
   minisign -Vm "$ZIG_TAR" -x "$ZIG_SIG" -P "$ZIG_MINISIGN_PUBLIC_KEY"
 else
   echo "minisign not found; verified Zig tarball with SHA-256 from ${ZIG_INDEX_URL}"
 fi
 
-rm -rf "$ZIG_DIR"
+rm -rf "$ZIG_EXTRACT_DIR"
 tar xf "$ZIG_TAR" -C /tmp
-sudo mkdir -p /usr/local/bin /usr/local/lib
-sudo rm -rf /usr/local/lib/zig
-sudo mkdir -p /usr/local/lib/zig
-sudo cp -f "${ZIG_DIR}/zig" /usr/local/bin/zig
-sudo cp -Rf "${ZIG_DIR}/lib/." /usr/local/lib/zig/
-zig version
+mkdir -p "$ZIG_INSTALL_DIR"
+rm -rf "$ZIG_INSTALL_DIR/lib"
+cp -f "$ZIG_EXTRACT_DIR/zig" "$ZIG_BIN"
+cp -Rf "$ZIG_EXTRACT_DIR/lib" "$ZIG_INSTALL_DIR/lib"
+publish_zig_for_later_steps "$ZIG_BIN"
+"$ZIG_BIN" version

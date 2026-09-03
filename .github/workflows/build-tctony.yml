@@ -30,6 +30,8 @@ jobs:
   build-package:
     runs-on: macos-26
     timeout-minutes: 60
+    env:
+      ZIG_REQUIRED: 0.15.2
 
     steps:
       - name: Checkout
@@ -83,6 +85,7 @@ jobs:
           echo "derived_prefix=derived-data-$PLATFORM_KEY-$XCODE_KEY" >> "$GITHUB_OUTPUT"
           echo "ghostty_key=ghosttykit-$PLATFORM_KEY-$XCODE_KEY-$GHOSTTY_SHA-$GHOSTTY_INPUTS_KEY" >> "$GITHUB_OUTPUT"
           echo "swiftpm_key=swiftpm-$PLATFORM_KEY-$XCODE_KEY-$SWIFTPM_KEY" >> "$GITHUB_OUTPUT"
+          echo "zig_key=zig-$PLATFORM_KEY-$ZIG_REQUIRED" >> "$GITHUB_OUTPUT"
 
       - name: Cache GhosttyKit
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -103,6 +106,12 @@ jobs:
           key: ${{ steps.cache-metadata.outputs.derived_prefix }}-${{ github.sha }}
           restore-keys: |
             ${{ steps.cache-metadata.outputs.derived_prefix }}-
+
+      - name: Cache Zig
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/cmux/zig
+          key: ${{ steps.cache-metadata.outputs.zig_key }}
 
       - name: Validate organization signing configuration
         env:

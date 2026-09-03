@@ -261,7 +261,9 @@ Core skill map:
 
 ## tctony release workflow
 
-本节覆盖上方的 `Release` 说明；在 `tctony-labs/cmux` fork 中发布版本时，以本节为准。
+本节是 `tctony-labs/cmux` fork 唯一有效的 release 流程，也是相关操作的最高优先级依据。发布 tctony 版本时，不遵循上方为 `manaflow-ai/cmux` 编写的 `Release` 说明，也不照搬 `skills/cmux-release/` 中的上游仓库名、默认版本策略、资产名、Secrets 或命令；如有冲突，一律以本节和当前两个 tctony workflow 的实际配置为准。
+
+不要继承上游“默认 bump minor”的规则。版本号以用户明确指定的 patch、minor、major 或具体版本为准；用户未指定时先确认，不要自行套用 `manaflow-ai/cmux` 的默认值。
 
 发布流程与 `tctony-labs/EmacsCtl` 一致：由 release workflow 调用可复用的构建 workflow，完成 App 构建、签名、公证、DMG 打包、GitHub Release 创建和 Sparkle 更新文件发布。
 
@@ -269,10 +271,13 @@ Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmu
 
 - Release workflow：`.github/workflows/release-tctony.yml`
 - 可复用构建 workflow：`.github/workflows/build-tctony.yml`
+- 构建架构：仅 `arm64`；除非用户明确要求，不要恢复 `x86_64` 或 universal 打包
 - Release 资产：`cmux-tctony.dmg`、`appcast.xml`
 - Sparkle feed：`https://github.com/tctony-labs/cmux/releases/latest/download/appcast.xml`
 
 此 fork 的 `.github/workflows/` 只保留上述两个 tctony workflow。除非用户明确要求，不要恢复上游的 CI、nightly、Cloud VM、TestFlight、Homebrew 或其他 GitHub Actions workflow。
+
+不要为了命中 cache，在每次 release 前额外运行一次预构建。正常的 tag release 只构建一次；GhosttyKit、SwiftPM 和 DerivedData cache 由正常的 build/release run 自然读取和更新。只有用户明确要求手动构建或预热时，才单独触发 `build-tctony.yml`。
 
 发布前：
 

@@ -26,6 +26,7 @@ DEVELOPMENT_TEAM="${CMUX_DEVELOPMENT_TEAM:-NSWMLDGCEZ}"
 REVEAL_IN_FINDER="${CMUX_REVEAL_IN_FINDER:-1}"
 ZIG_FORMULA="zig@0.15"
 ZIG_REQUIRED="0.15.2"
+TARGET_ARCH="arm64"
 
 ZIG_BIN="${CMUX_ZIG:-}"
 if [[ -z "$ZIG_BIN" ]]; then
@@ -79,6 +80,7 @@ echo "==> Ensuring ghosttykit..."
 echo "==> using zig: $("$CMUX_ZIG" version) ($CMUX_ZIG)"
 echo "==> bundle id: $BUNDLE_ID"
 echo "==> signing: $SIGNING_IDENTITY (team $DEVELOPMENT_TEAM)"
+echo "==> architecture: $TARGET_ARCH"
 XCODEBUILD_CACHE_ARGS=()
 if [[ -n "$SPM_CACHE" ]]; then
   mkdir -p "$SPM_CACHE"
@@ -102,11 +104,20 @@ xcodebuild \
   PROVISIONING_PROFILE_SPECIFIER="" \
   PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
   CMUX_SIDEBAR_EXTENSION_POINT_ID="$BUNDLE_ID.cmux.sidebar" \
+  ARCHS="$TARGET_ARCH" \
+  ONLY_ACTIVE_ARCH=YES \
   build
 
 APP_PATH="$DERIVED_DATA/Build/Products/Release/cmux.app"
 if [[ ! -d "$APP_PATH" ]]; then
   echo "error: cmux.app not found at $APP_PATH" >&2
+  exit 1
+fi
+
+APP_EXECUTABLE="$APP_PATH/Contents/MacOS/cmux"
+APP_ARCHS="$(lipo -archs "$APP_EXECUTABLE")"
+if [[ "$APP_ARCHS" != "$TARGET_ARCH" ]]; then
+  echo "error: expected $TARGET_ARCH app executable, found: $APP_ARCHS" >&2
   exit 1
 fi
 
