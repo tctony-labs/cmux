@@ -16,26 +16,31 @@ print_elapsed_time() {
 
 trap print_elapsed_time EXIT
 
-CMUX_REPO="${CMUX_REPO:-$HOME/Develop/Projects/cmux}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CMUX_REPO="${CMUX_REPO:-$SCRIPT_DIR}"
 DERIVED_DATA="${CMUX_DERIVED_DATA:-$HOME/Library/Developer/Xcode/DerivedData/cmux-release-local}"
-BUNDLE_ID="com.tctony.cmux"
-SIGNING_IDENTITY="Apple Development: chang tang (QLFYDXFVK8)"
-DEVELOPMENT_TEAM="NSWMLDGCEZ"
+BUNDLE_ID="${CMUX_BUNDLE_ID:-com.tctony.cmux}"
+SIGNING_IDENTITY="${CMUX_SIGNING_IDENTITY:-Apple Development: chang tang (QLFYDXFVK8)}"
+DEVELOPMENT_TEAM="${CMUX_DEVELOPMENT_TEAM:-NSWMLDGCEZ}"
+REVEAL_IN_FINDER="${CMUX_REVEAL_IN_FINDER:-1}"
 ZIG_FORMULA="zig@0.15"
 ZIG_REQUIRED="0.15.2"
 
-if ! command -v brew >/dev/null 2>&1; then
-  echo "error: Homebrew is required but was not found in PATH" >&2
-  exit 1
+ZIG_BIN="${CMUX_ZIG:-}"
+if [[ -z "$ZIG_BIN" ]]; then
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "error: Homebrew is required when CMUX_ZIG is not set" >&2
+    exit 1
+  fi
+
+  if ! brew list --versions "$ZIG_FORMULA" >/dev/null 2>&1; then
+    echo "==> installing $ZIG_FORMULA"
+    brew install "$ZIG_FORMULA"
+  fi
+
+  ZIG_BIN="$(brew --prefix "$ZIG_FORMULA")/bin/zig"
 fi
 
-if ! brew list --versions "$ZIG_FORMULA" >/dev/null 2>&1; then
-  echo "==> installing $ZIG_FORMULA"
-  brew install "$ZIG_FORMULA"
-fi
-
-ZIG_PREFIX="$(brew --prefix "$ZIG_FORMULA")"
-ZIG_BIN="$ZIG_PREFIX/bin/zig"
 if [[ ! -x "$ZIG_BIN" ]]; then
   echo "error: expected zig at $ZIG_BIN" >&2
   exit 1
@@ -61,7 +66,7 @@ fi
 
 cd "$CMUX_REPO"
 
-export PATH="$PATH:$ZIG_PREFIX/bin"
+export PATH="$PATH:$(dirname "$ZIG_BIN")"
 export CMUX_ZIG="$ZIG_BIN"
 
 echo "==> Initializing submodules..."
@@ -109,8 +114,6 @@ fi
 echo "==> Release app:"
 echo "    $APP_PATH"
 echo
-echo "The app has been revealed in Finder."
-echo
 echo "To replace the installed app manually:"
 echo "    ditto \"$APP_PATH\" /Applications/cmux.app"
 echo
@@ -121,4 +124,8 @@ echo
 echo "To disable automatic update checks for this local build:"
 echo "    defaults write $BUNDLE_ID SUEnableAutomaticChecks -bool false"
 
-open -R "$APP_PATH"
+if [[ "$REVEAL_IN_FINDER" == "1" ]]; then
+  open -R "$APP_PATH"
+  echo
+  echo "The app has been revealed in Finder."
+fi

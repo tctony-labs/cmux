@@ -100,11 +100,18 @@ if [[ -n "$APP_ID" ]]; then
     exit 1
   }
 fi
-/usr/bin/codesign -d --entitlements :- "$APP_PATH" 2>&1 \
-  | grep -q "com.apple.developer.web-browser.public-key-credential" || {
-    echo "error: signed app missing web-browser entitlement" >&2
-    exit 1
-  }
+WEBAUTHN_ENTITLEMENT="$(
+  /usr/libexec/PlistBuddy \
+    -c "Print :com.apple.developer.web-browser.public-key-credential" \
+    "$APP_ENTITLEMENTS" 2>/dev/null || true
+)"
+if [[ "$WEBAUTHN_ENTITLEMENT" == "true" ]]; then
+  /usr/bin/codesign -d --entitlements :- "$APP_PATH" 2>&1 \
+    | grep -q "com.apple.developer.web-browser.public-key-credential" || {
+      echo "error: signed app missing web-browser entitlement" >&2
+      exit 1
+    }
+fi
 
 # Helpers must NOT carry the main app's application-identifier.
 for helper in "$APP_PATH/Contents/Resources/bin"/*; do
