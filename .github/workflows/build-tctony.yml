@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   build-package:
-    runs-on: macos-latest
+    runs-on: macos-26
     timeout-minutes: 60
 
     steps:
@@ -43,6 +43,19 @@ jobs:
           echo "APPCAST_PATH=$RUNNER_TEMP/appcast.xml" >> "$GITHUB_ENV"
           echo "DMG_PATH=$RUNNER_TEMP/cmux-tctony.dmg" >> "$GITHUB_ENV"
 
+      - name: Select pinned Xcode
+        run: |
+          set -euo pipefail
+          XCODE_VERSION="$(tr -d '[:space:]' < .xcode-version)"
+          XCODE_APP="/Applications/Xcode_${XCODE_VERSION}.app"
+          DEVELOPER_DIR="$XCODE_APP/Contents/Developer"
+          if [[ ! -d "$DEVELOPER_DIR" ]]; then
+            echo "Pinned Xcode is not installed: $XCODE_APP" >&2
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$DEVELOPER_DIR" xcodebuild -version
+
       - name: Set cache metadata
         id: cache-metadata
         run: |
@@ -52,20 +65,24 @@ jobs:
             git hash-object \
               scripts/ensure-ghosttykit.sh \
               scripts/ghosttykit-checksums.txt \
+              scripts/install-zig-ci.sh \
               scripts/validate-xcframework-archive.py \
+              build-cmux.sh \
               ghostty.h \
               | shasum -a 256 \
               | awk '{print substr($1, 1, 12)}'
           )"
+          MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
+          PLATFORM_KEY="$RUNNER_OS-$MACOS_MAJOR-$RUNNER_ARCH"
           XCODE_KEY="$(xcodebuild -version | shasum -a 256 | awk '{print substr($1, 1, 12)}')"
           SWIFTPM_KEY="$(
             shasum -a 256 \
               cmux.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
               | awk '{print substr($1, 1, 12)}'
           )"
-          echo "derived_prefix=derived-data-$RUNNER_OS-$RUNNER_ARCH-$XCODE_KEY" >> "$GITHUB_OUTPUT"
-          echo "ghostty_key=ghosttykit-$RUNNER_OS-$RUNNER_ARCH-$GHOSTTY_SHA-$GHOSTTY_INPUTS_KEY" >> "$GITHUB_OUTPUT"
-          echo "swiftpm_key=swiftpm-$RUNNER_OS-$RUNNER_ARCH-$XCODE_KEY-$SWIFTPM_KEY" >> "$GITHUB_OUTPUT"
+          echo "derived_prefix=derived-data-$PLATFORM_KEY-$XCODE_KEY" >> "$GITHUB_OUTPUT"
+          echo "ghostty_key=ghosttykit-$PLATFORM_KEY-$XCODE_KEY-$GHOSTTY_SHA-$GHOSTTY_INPUTS_KEY" >> "$GITHUB_OUTPUT"
+          echo "swiftpm_key=swiftpm-$PLATFORM_KEY-$XCODE_KEY-$SWIFTPM_KEY" >> "$GITHUB_OUTPUT"
 
       - name: Cache GhosttyKit
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
