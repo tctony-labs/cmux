@@ -107,6 +107,11 @@ jobs:
           restore-keys: |
             ${{ steps.cache-metadata.outputs.derived_prefix }}-
 
+      - name: Remove runner-specific module caches
+        run: |
+          rm -rf "$RUNNER_TEMP/cmux-tctony/ModuleCache.noindex"
+          rm -rf "$RUNNER_TEMP/cmux-tctony/SDKStatCaches.noindex"
+
       - name: Cache Zig
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
