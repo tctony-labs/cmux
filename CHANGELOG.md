@@ -2,6 +2,14 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.21] - 2026-09-04
+
+### Changed
+- tctony release builds now reuse a GhosttyKit cache prewarmed on `develop` and fail early when the exact cache is unavailable.
+
+### Fixed
+- Double-clicking text on a prompt-only row no longer moves the terminal input cursor to the wrong position.
+
 ## [0.64.20] - 2026-09-03
 
 ### Fixed
