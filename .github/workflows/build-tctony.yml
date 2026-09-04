@@ -1,18 +1,40 @@
 name: Build tctony cmux package
 
 on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/build-tctony.yml
+      - .gitmodules
+      - .xcode-version
+      - build-cmux.sh
+      - ghostty
+      - ghostty.h
+      - scripts/ensure-ghosttykit.sh
+      - scripts/install-zig-ci.sh
   workflow_dispatch:
     inputs:
       release_tag:
         description: Optional release tag for a signed Sparkle dry run
         required: false
         type: string
+      require_ghosttykit_cache:
+        description: Fail unless develop has already populated the exact GhosttyKit cache
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       release_tag:
         description: Release tag used to configure Sparkle and generate appcast.xml
         required: false
         type: string
+      require_ghosttykit_cache:
+        description: Fail unless develop has already populated the exact GhosttyKit cache
+        required: false
+        default: false
+        type: boolean
     secrets:
       APPLE_ID_PASS:
         required: true
@@ -31,6 +53,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     env:
+      CMUX_GHOSTTYKIT_NO_PREBUILT: 1
       ZIG_REQUIRED: 0.15.2
 
     steps:
@@ -66,9 +89,7 @@ jobs:
           GHOSTTY_INPUTS_KEY="$(
             git hash-object \
               scripts/ensure-ghosttykit.sh \
-              scripts/ghosttykit-checksums.txt \
               scripts/install-zig-ci.sh \
-              scripts/validate-xcframework-archive.py \
               build-cmux.sh \
               ghostty.h \
               | shasum -a 256 \
@@ -82,16 +103,28 @@ jobs:
               cmux.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
               | awk '{print substr($1, 1, 12)}'
           )"
+          GHOSTTY_CACHE_KEY="ghosttykit-$PLATFORM_KEY-$XCODE_KEY"
+          GHOSTTY_CACHE_KEY="$GHOSTTY_CACHE_KEY-zig-$ZIG_REQUIRED-$GHOSTTY_SHA-$GHOSTTY_INPUTS_KEY"
           echo "derived_prefix=derived-data-$PLATFORM_KEY-$XCODE_KEY" >> "$GITHUB_OUTPUT"
-          echo "ghostty_key=ghosttykit-$PLATFORM_KEY-$XCODE_KEY-$GHOSTTY_SHA-$GHOSTTY_INPUTS_KEY" >> "$GITHUB_OUTPUT"
+          echo "ghostty_key=$GHOSTTY_CACHE_KEY" >> "$GITHUB_OUTPUT"
           echo "swiftpm_key=swiftpm-$PLATFORM_KEY-$XCODE_KEY-$SWIFTPM_KEY" >> "$GITHUB_OUTPUT"
           echo "zig_key=zig-$PLATFORM_KEY-$ZIG_REQUIRED" >> "$GITHUB_OUTPUT"
 
       - name: Cache GhosttyKit
+        id: ghosttykit-cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/cmux/ghosttykit
           key: ${{ steps.cache-metadata.outputs.ghostty_key }}
+
+      - name: Require develop-prewarmed GhosttyKit cache
+        if: inputs.require_ghosttykit_cache && steps.ghosttykit-cache.outputs.cache-hit != 'true'
+        env:
+          GHOSTTYKIT_CACHE_KEY: ${{ steps.cache-metadata.outputs.ghostty_key }}
+        run: |
+          echo "Missing GhosttyKit cache: $GHOSTTYKIT_CACHE_KEY" >&2
+          echo "Run build-tctony.yml on develop and wait for it to succeed before releasing." >&2
+          exit 1
 
       - name: Cache SwiftPM
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5

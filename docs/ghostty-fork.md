@@ -1,4 +1,4 @@
-# Ghostty Fork Changes (manaflow-ai/ghostty)
+# Ghostty Fork Changes (tctony-labs/ghostty)
 
 This repo uses a fork of Ghostty for local patches that aren't upstream yet.
 When we change the fork, update this document and the parent submodule SHA.
@@ -6,13 +6,31 @@ When we change the fork, update this document and the parent submodule SHA.
 ## Fork update checklist
 
 1) Make changes in `ghostty/`.
-2) Commit and push to `manaflow-ai/ghostty`.
+2) Commit and push to the permanent `cmux` branch of `tctony-labs/ghostty`.
 3) Update this file with the new change summary + conflict notes.
 4) In the parent repo: `git add ghostty` and commit the submodule SHA.
+5) Push the parent change to `develop` and wait for `build-tctony.yml` to populate the exact GhosttyKit cache.
+6) Create a release tag only after the `develop` build succeeds.
+
+## tctony GhosttyKit cache policy
+
+The tctony fork does not publish or consume GhosttyKit GitHub Release artifacts. Its build workflow sets
+`CMUX_GHOSTTYKIT_NO_PREBUILT=1` and caches the source-built framework by Ghostty SHA, Xcode, platform, and relevant build inputs.
+Updating the `ghostty` submodule pointer on `develop` automatically runs `build-tctony.yml` and populates that cache. Release builds require an exact cache hit and fail with instructions to rerun the build workflow on `develop` if GitHub has evicted the cache.
+
+Existing `manaflow-ai/ghostty` release and checksum references below are historical records for earlier fork heads; they are not part of the tctony release path.
 
 ## Current fork changes
 
-Current cmux pinned fork head: `5697db81`, which adds the Darwin-only
+Current cmux pinned fork head: `e7ece31b5` on the permanent `cmux` branch.
+It adds behavioral coverage in `be5f0b4f2` and fixes prompt-only row clicks in
+`e7ece31b5`. A click on a hard-broken prompt row now produces no cursor movement,
+while a prompt and input sharing the same row or soft-wrapped logical line still
+allows click-to-move. During parent updates, preserve the prompt-only semantic-row
+check in `promptClickLine` and the adjacent tests in `src/terminal/Screen.zig`.
+
+This change is based on prior cmux pinned head `05c3e2908`. An earlier pinned head
+was `5697db81`, which adds the Darwin-only
 `ghostty_surface_set_renderer_realized` C API (a `display_realized` renderer-thread
 mailbox message that drives `displayUnrealized()`/`displayRealized()`) on top of
 `34cbf180d`. cmux uses it to release an occluded terminal's GPU renderer
@@ -333,10 +351,9 @@ branch `issue-5458-surface-registry-lock`) into the Cmd-click link fix line
 (`f78189ac1`). It is reachable from `manaflow-ai/ghostty` through branch
 `issue-5128-alt-screen-link-open`. Published
 `xcframework-34cbf180d8917b802d61d9929cfb493594f2ab52-crashsubdir-cmux-crash-v1`
-and pinned its archive checksum in `scripts/ghosttykit-checksums.txt`. The
-release and checksum pin must be regenerated whenever this commit changes, even
-for comment-only amends, because the release tag is keyed by the Ghostty commit
-SHA.
+and pinned its archive checksum in `scripts/ghosttykit-checksums.txt`. This is a
+historical manaflow artifact; new tctony Ghostty commits use the Actions cache
+policy above and do not publish replacement archives or checksum entries.
 
 ## Upstreamed fork changes
 

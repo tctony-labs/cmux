@@ -20,6 +20,7 @@ jobs:
     uses: ./.github/workflows/build-tctony.yml
     with:
       release_tag: ${{ inputs.tag || github.ref_name }}
+      require_ghosttykit_cache: true
     secrets: inherit
 
   publish-release:

@@ -15,25 +15,27 @@ cd ghostty && zig build -Demit-xcframework=true -Dxcframework-target=universal -
 
 ## Submodule workflow
 
-Ghostty changes must be committed in the `ghostty` submodule and pushed to the `manaflow-ai/ghostty` fork. Keep `docs/ghostty-fork.md` up to date with any fork changes and conflict notes.
+Ghostty changes must be committed in the `ghostty` submodule and pushed to the permanent `cmux` branch of the `tctony-labs/ghostty` fork. Keep `docs/ghostty-fork.md` up to date with any fork changes and conflict notes.
 
 ```bash
 cd ghostty
-git remote -v  # origin = upstream, manaflow = fork
-git checkout -b <branch>
+git remote -v  # origin = tctony fork, manaflow = parent fork
+git checkout cmux
 git add <files>
 git commit -m "..."
-git push manaflow <branch>
+git push origin HEAD:cmux
+git fetch origin cmux
+git merge-base --is-ancestor HEAD origin/cmux
 ```
 
-To keep the fork up to date with upstream:
+Keep `main` available for synchronizing the fork with its parent:
 
 ```bash
 cd ghostty
-git fetch origin
+git fetch manaflow
 git checkout main
-git merge origin/main
-git push manaflow main
+git merge manaflow/main
+git push origin main
 ```
 
 Then update the parent repo with the new submodule SHA:
@@ -46,12 +48,12 @@ git commit -m "Update ghostty submodule"
 
 ## Submodule safety
 
-When modifying a submodule, always push the submodule commit to its remote `main` branch before committing the updated pointer in the parent repo. Never commit on a detached HEAD or temporary branch; the commit can be orphaned and lost.
+When modifying a submodule, always push the submodule commit to its permanent tracked remote branch before committing the updated pointer in the parent repo. Never commit on a detached HEAD or temporary branch; the commit can be orphaned and lost. Ghostty's permanent patch branch is `origin/cmux`.
 
 Verify with:
 
 ```bash
-cd <submodule> && git merge-base --is-ancestor HEAD origin/main
+cd ghostty && git merge-base --is-ancestor HEAD origin/cmux
 ```
 
 ## Detailed reference

@@ -146,7 +146,7 @@ This makes it visible in the GitHub PR UI (Commits tab, check statuses) that the
   - `TabItemView` in `ContentView.swift`: uses `Equatable` conformance + `.equatable()` to skip body re-evaluation during typing. Do not add `@EnvironmentObject`, `@ObservedObject` (besides `tab`), or `@Binding` properties without updating the `==` function. Do not remove `.equatable()` from the ForEach call site. Do not read `tabManager` or `notificationStore` in the body; use the precomputed `let` parameters instead.
   - `TerminalSurface.forceRefresh()` in `GhosttyTerminalView.swift`: called on every keystroke. Do not add allocations, file I/O, or formatting here.
 - **Terminal find layering contract:** `SurfaceSearchOverlay` must be mounted from `GhosttySurfaceScrollView` in `Sources/GhosttyTerminalView.swift` (AppKit portal layer), not from SwiftUI panel containers such as `Sources/Panels/TerminalPanelView.swift`. Portal-hosted terminal views can sit above SwiftUI during split/workspace churn.
-- **Submodule safety:** When modifying a submodule (ghostty, vendor/bonsplit, etc.), always push the submodule commit to its remote `main` branch BEFORE committing the updated pointer in the parent repo. Never commit on a detached HEAD or temporary branch — the commit will be orphaned and lost. Verify with: `cd <submodule> && git merge-base --is-ancestor HEAD origin/main`.
+- **Submodule safety:** When modifying a submodule (ghostty, vendor/bonsplit, etc.), always push the submodule commit to its permanent tracked remote branch BEFORE committing the updated pointer in the parent repo. Never commit on a detached HEAD or temporary branch — the commit will be orphaned and lost. For Ghostty, push to `origin/cmux` and verify with: `cd ghostty && git merge-base --is-ancestor HEAD origin/cmux`.
 - **All user-facing strings must be localized.** Use `String(localized: "key.name", defaultValue: "English text")` for every string shown in the UI (labels, buttons, menus, dialogs, tooltips, error messages). Keys go in `Resources/Localizable.xcstrings` with translations for all supported languages (currently English and Japanese). Never use bare string literals in SwiftUI `Text()`, `Button()`, alert titles, etc.
 - **Localization audit is required for every user-facing change.** Before finishing a task that changes UI, Settings rows, menus, shortcut metadata, schema/config text, docs, command/help text, alerts, or tooltips, enumerate the changed user-facing surfaces and verify each one has entries for every supported locale. `defaultValue`, English fallback text, schema descriptions, or copied English strings do not count as localization. For Swift/AppKit strings, update `Resources/Localizable.xcstrings`; for localized web/docs content, update every supported message catalog (currently `web/messages/en.json` and `web/messages/ja.json`) and any localized data structures that carry inline translations. Parse touched localization files, compare changed message keys across locales, and use `rg` over changed Swift/TS/TSX/docs files for newly introduced bare English. The final handoff must state what localization audit was performed or explicitly say what could not be verified.
 - **Shortcut policy:** Every new cmux-owned keyboard shortcut must be added to `KeyboardShortcutSettings`, visible/editable in Settings, supported in `~/.config/cmux/cmux.json`, and documented in the keyboard shortcut and configuration docs.
@@ -157,26 +157,28 @@ This makes it visible in the GitHub PR UI (Commits tab, check statuses) that the
 
 ## Ghostty submodule workflow
 
-Ghostty changes must be committed in the `ghostty` submodule and pushed to the `manaflow-ai/ghostty` fork.
+Ghostty changes must be committed in the `ghostty` submodule and pushed to the `tctony-labs/ghostty` fork.
 Keep `docs/ghostty-fork.md` up to date with any fork changes and conflict notes.
 
 ```bash
 cd ghostty
-git remote -v  # origin = upstream, manaflow = fork
-git checkout -b <branch>
+git remote -v  # origin = tctony fork, manaflow = parent fork
+git checkout cmux
 git add <files>
 git commit -m "..."
-git push manaflow <branch>
+git push origin HEAD:cmux
+git fetch origin cmux
+git merge-base --is-ancestor HEAD origin/cmux
 ```
 
-To keep the fork up to date with upstream:
+The permanent `cmux` branch carries cmux-specific patches. Keep `main` available for synchronizing the fork with its parent:
 
 ```bash
 cd ghostty
-git fetch origin
+git fetch manaflow
 git checkout main
-git merge origin/main
-git push manaflow main
+git merge manaflow/main
+git push origin main
 ```
 
 Then update the parent repo with the new submodule SHA:
@@ -277,7 +279,12 @@ Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmu
 
 此 fork 的 `.github/workflows/` 只保留上述两个 tctony workflow。除非用户明确要求，不要恢复上游的 CI、nightly、Cloud VM、TestFlight、Homebrew 或其他 GitHub Actions workflow。
 
-不要为了命中 cache，在每次 release 前额外运行一次预构建。正常的 tag release 只构建一次；GhosttyKit、SwiftPM 和 DerivedData cache 由正常的 build/release run 自然读取和更新。只有用户明确要求手动构建或预热时，才单独触发 `build-tctony.yml`。
+此 fork 不发布或下载 GhosttyKit 预构建 Release 产物，`build-tctony.yml` 固定使用源码构建和 GitHub Actions cache。每次更新 `ghostty` submodule 指针后，必须先将 cmux 变更推送到默认分支 `develop`，等待 `build-tctony.yml` 成功并写入按 Ghostty SHA 隔离的 cache，然后才能创建 release tag。release 调用构建 workflow 时会强制检查精确 cache key；未命中时直接失败，不会在 release 中重新构建 GhosttyKit。若 cache 被 GitHub 清理，可在 `develop` 上手动触发 `build-tctony.yml` 重新预热。
+
+```bash
+gh workflow run build-tctony.yml --repo tctony-labs/cmux --ref develop
+gh run watch --repo tctony-labs/cmux
+```
 
 发布前：
 

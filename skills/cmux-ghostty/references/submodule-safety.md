@@ -17,20 +17,20 @@ For Ghostty:
 ```bash
 cd ghostty
 git remote -v
-git checkout -b <branch>
+git checkout cmux
 git add <files>
 git commit -m "..."
-git push manaflow <branch>
+git push origin HEAD:cmux
 ```
 
-If the parent pointer is supposed to track fork `main`, make sure the commit is an ancestor of that remote branch:
+The parent pointer tracks the tctony fork's permanent `cmux` patch branch. Make sure the commit is an ancestor of that remote branch:
 
 ```bash
-git fetch manaflow main
-git merge-base --is-ancestor HEAD manaflow/main
+git fetch origin cmux
+git merge-base --is-ancestor HEAD origin/cmux
 ```
 
-The top-level CLAUDE note uses `origin/main` as the generic verification form for submodules. In the Ghostty submodule, check the actual remote names first because `origin` may be upstream and `manaflow` may be the fork.
+In this repository's Ghostty submodule, `origin` is `tctony-labs/ghostty` and `manaflow` is the parent fork. Keep `origin/main` free for parent synchronization; cmux-specific commits belong on `origin/cmux`.
 
 ## Detached HEAD hazard
 
