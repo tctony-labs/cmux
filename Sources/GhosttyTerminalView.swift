@@ -6519,9 +6519,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let pointSnapshotResolution = snapshotPoint.flatMap {
             resolveVisibleWordPath(
                 at: $0,
-                cwd: cwd,
-                workspace: workspace,
-                terminalSurface: termSurface
+                cwd: cwd
             )
         }
 
@@ -6561,9 +6559,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 #endif
                 viewportResolution = resolveVisibleWordPathFromViewportOffset(
                     viewportOffsetStart,
-                    cwd: cwd,
-                    workspace: workspace,
-                    terminalSurface: termSurface
+                    cwd: cwd
                 )
             }
 
@@ -6718,88 +6714,82 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     private func resolveVisibleWordPathFromViewportOffset(
         _ viewportOffsetStart: Int,
-        cwd: String,
-        workspace: Workspace,
-        terminalSurface: TerminalSurface
+        cwd: String
     ) -> WordPathResolution? {
-        guard let panel = workspace.terminalPanel(for: terminalSurface.id),
-              let surface else {
-            return nil
-        }
-
+        guard let surface else { return nil }
         let size = ghostty_surface_size(surface)
-        let rows = max(Int(size.rows), 1)
-        let cols = max(Int(size.columns), 1)
-        let visibleText = TerminalController.shared.readTerminalTextForSnapshot(
-            terminalPanel: panel,
-            lineLimit: max(200, rows * 4)
-        ) ?? ""
-        let visibleLines = visibleText.visibleLines(rows: rows)
-        let rowOffset = max(0, rows - visibleLines.count)
-        let rowFromTop = max(0, min(rows - 1, viewportOffsetStart / cols))
-        let visibleRow = rowFromTop - rowOffset
-        guard visibleRow >= 0, visibleRow < visibleLines.count else { return nil }
-
-        let column = max(0, min(cols - 1, viewportOffsetStart % cols))
-        guard let resolution = TerminalPathResolver().resolveVisibleLinesPath(
-            visibleLines,
-            row: visibleRow,
-            column: column,
+        let columns = max(Int(size.columns), 1)
+        return resolveVisibleWordPath(
+            row: viewportOffsetStart / columns,
+            column: viewportOffsetStart % columns,
             cwd: cwd
-        ) else {
-            return nil
-        }
-
-        return makeWordPathResolution(
-            path: resolution.path,
-            lineNumber: resolution.lineNumber,
-            columnNumber: resolution.columnNumber,
-            source: .snapshot,
-            rawToken: resolution.rawToken
         )
     }
 
     private func resolveVisibleWordPath(
         at point: NSPoint,
-        cwd: String,
-        workspace: Workspace,
-        terminalSurface: TerminalSurface
+        cwd: String
     ) -> WordPathResolution? {
-        guard let panel = workspace.terminalPanel(for: terminalSurface.id),
-              let surface else {
-            return nil
-        }
-
+        guard let surface else { return nil }
         let size = ghostty_surface_size(surface)
         let rows = max(Int(size.rows), 1)
         let cols = max(Int(size.columns), 1)
-        let resolvedCellWidth = cellSize.width > 0 ? cellSize.width : CGFloat(size.cell_width_px)
-        let resolvedCellHeight = cellSize.height > 0 ? cellSize.height : CGFloat(size.cell_height_px)
+        // Ghostty reports physical pixels; mouse events and bounds use AppKit points.
+        let scale = expectedPixelSize(for: CGSize(width: 1, height: 1))
+        let resolvedCellWidth = CGFloat(size.cell_width_px) / scale.width
+        let resolvedCellHeight = CGFloat(size.cell_height_px) / scale.height
         guard resolvedCellWidth > 0, resolvedCellHeight > 0 else { return nil }
 
-        let visibleText = TerminalController.shared.readTerminalTextForSnapshot(
-            terminalPanel: panel,
-            lineLimit: max(200, rows * 4)
-        ) ?? ""
-        let visibleLines = visibleText.visibleLines(rows: rows)
-        let rowOffset = max(0, rows - visibleLines.count)
         let xInset = max(0, (bounds.width - (CGFloat(cols) * resolvedCellWidth)) / 2)
         let yInset = max(0, (bounds.height - (CGFloat(rows) * resolvedCellHeight)) / 2)
-
         let yFromTop = bounds.height - point.y
-        let rowFromTop = max(0, min(rows - 1, Int((yFromTop - yInset) / resolvedCellHeight)))
-        let visibleRow = rowFromTop - rowOffset
-        guard visibleRow >= 0, visibleRow < visibleLines.count else { return nil }
+        let row = Int(floor((yFromTop - yInset) / resolvedCellHeight))
+        let column = Int(floor((point.x - xInset) / resolvedCellWidth))
+        return resolveVisibleWordPath(row: row, column: column, cwd: cwd)
+    }
 
-        let column = max(0, min(cols - 1, Int((point.x - xInset) / resolvedCellWidth)))
+    private func resolveVisibleWordPath(row: Int, column: Int, cwd: String) -> WordPathResolution? {
+        guard let surface else { return nil }
+        let size = ghostty_surface_size(surface)
+        let rows = Int(size.rows)
+        let columns = Int(size.columns)
+        guard (0..<rows).contains(row), (0..<columns).contains(column) else { return nil }
+
+        // Whole-viewport text unwraps soft lines. Read physical rows separately so
+        // earlier wrapped output cannot move the token away from its screen row.
+        let firstRow = max(0, row - 1)
+        let lastRow = min(rows - 1, row + 1)
+        var lines: [String] = []
+        for visibleRow in firstRow...lastRow {
+            let selection = ghostty_selection_s(
+                top_left: ghostty_point_s(
+                    tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
+                    x: 0, y: UInt32(visibleRow)
+                ),
+                bottom_right: ghostty_point_s(
+                    tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
+                    x: UInt32(columns - 1), y: UInt32(visibleRow)
+                ),
+                rectangle: false
+            )
+            var text = ghostty_text_s()
+            guard ghostty_surface_read_text(surface, selection, &text) else { return nil }
+            defer { ghostty_surface_free_text(surface, &text) }
+            if let pointer = text.text, text.text_len > 0 {
+                lines.append(String(decoding: UnsafeBufferPointer(
+                    start: UnsafeRawPointer(pointer).assumingMemoryBound(to: UInt8.self),
+                    count: Int(text.text_len)
+                ), as: UTF8.self))
+            } else {
+                lines.append("")
+            }
+        }
         guard let resolution = TerminalPathResolver().resolveVisibleLinesPath(
-            visibleLines,
-            row: visibleRow,
+            lines,
+            row: row - firstRow,
             column: column,
             cwd: cwd
-        ) else {
-            return nil
-        }
+        ) else { return nil }
 
         return makeWordPathResolution(
             path: resolution.path,
