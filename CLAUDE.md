@@ -236,20 +236,24 @@ Notes:
 
 ## Skills
 
-Detailed cmux contributor rules live in repo skills under `skills/`; use the task-specific skill before changing that area.
+本 fork 以 macOS 桌面端 bug 修复为主，按改动范围读取 `skills/` 下对应技能；本文件中的 tctony 规则优先。
 
-Core skill map:
+常用技能：
 
-- `cmux-dev-workflow`: setup, tagged reloads, Xcode project normalization, sidebar extension tagging, local dev build isolation.
-- `cmux-architecture`: package boundaries, refactor architecture, file/API discipline, testability, Swift concurrency rules.
-- `cmux-backend`: backend TypeScript, Effect, Cloud VM control plane, provider secrets, Postgres and migrations.
-- `cmux-debugging`: debug event log, Debug menu, runtime pitfalls, typing-sensitive paths, SwiftUI list boundaries.
-- `cmux-localization`: user-facing strings, localization files, shortcut text, and localization audit.
-- `cmux-testing`: regression policy, Swift Testing, test quality, test wiring, local vs CI validation.
-- `cmux-socket-policy`: socket command threading and focus preservation.
-- `cmux-shared-behavior`: shared action paths for multi-entrypoint behavior and optimistic updates.
-- `cmux-ghostty`: Ghostty submodule and GhosttyKit workflow.
-- `cmux-release`: release, version bump, changelog, pretag guard, and release asset workflow.
+- `cmux-debugging`：定位终端、UI 和性能问题。
+- `cmux-testing`：验证修复与回归测试。
+- `cmux-dev-workflow`：本地构建与验证，reload 使用固定 tag `dev`。
+
+按需读取：
+
+- `cmux-ghostty`：修改 Ghostty 子模块时。
+- `cmux-localization`：修改界面文字等用户可见文案时。
+- `cmux-socket-policy`：修改 CLI、socket 或焦点行为时。
+- `cmux-shared-behavior`：修复涉及多个操作入口或乐观更新时。
+
+`cmux-architecture` 不作为常规修复入口，仅在大改 Swift 或进行架构重构时读取。
+
+发布仅使用下方 `tctony release workflow`，不使用 `cmux-release`。上游后端和 Cloud VM 不属于当前维护范围，不列入技能入口。
 
 ## tctony fork
 
@@ -265,7 +269,11 @@ Core skill map:
 
 本节是 `tctony-labs/cmux` fork 唯一有效的 release 流程，也是相关操作的最高优先级依据。发布 tctony 版本时，不遵循上方为 `manaflow-ai/cmux` 编写的 `Release` 说明，也不照搬 `skills/cmux-release/` 中的上游仓库名、默认版本策略、资产名、Secrets 或命令；如有冲突，一律以本节和当前两个 tctony workflow 的实际配置为准。
 
-不要继承上游“默认 bump minor”的规则。版本号以用户明确指定的 patch、minor、major 或具体版本为准；用户未指定时先确认，不要自行套用 `manaflow-ai/cmux` 的默认值。
+不要读取或套用 `cmux-release` 技能；发布以本节为准。版本号以用户明确指定的 patch、minor、major 或具体版本为准；`lgtm` 发布默认 bump patch，其他发布请求未指定版本时先确认。
+
+### `lgtm` 触发规则
+
+在本项目中，用户输入 `lgtm` 即授权提交当前修复并完成发布，无需再次询问是否 commit、打 tag 或推送。按本节执行：提交修复、更新 changelog 和 patch 版本、提交发布变更、完成发布前检查及必要的 GhosttyKit cache 预热，最后推送版本 tag 触发打包并报告结果。用户明确指定版本时覆盖默认 patch。仅讨论或配置 `lgtm` 规则不触发发布。
 
 发布流程与 `tctony-labs/EmacsCtl` 一致：由 release workflow 调用可复用的构建 workflow，完成 App 构建、签名、公证、DMG 打包、GitHub Release 创建和 Sparkle 更新文件发布。
 
