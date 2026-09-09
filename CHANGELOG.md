@@ -2,6 +2,12 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.22] - 2026-09-09
+
+### Fixed
+- Fix Cmd-click opening the wrong terminal file by correcting Retina coordinate scaling and preserving screen rows across wrapped output.
+- ターミナルで Cmd クリックすると別のファイルが開く問題を修正しました。Retina の座標変換を補正し、折り返された出力でも画面上の行位置を保持します。
+
 ## [0.64.21] - 2026-09-04
 
 ### Changed
