@@ -129,14 +129,23 @@ def load_settings(path: Path) -> dict[str, Any]:
 
 
 def atomic_write(path: Path, data: dict[str, Any]) -> None:
+    # Replace the destination file, not the symlink used to reach it.
+    path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     encoded = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, delete=False, suffix=".tmp"
-    ) as tmp:
-        tmp.write(encoded)
-        tmp_path = Path(tmp.name)
-    os.replace(tmp_path, path)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete=False, suffix=".tmp"
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(encoded)
+        if path.exists():
+            shutil.copymode(path, tmp_path)
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
 
 
 def split_path(dotted: str) -> list[str]:
