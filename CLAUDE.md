@@ -274,7 +274,7 @@ Notes:
 
 ### `lgtm` 触发规则
 
-在本项目中，用户输入 `lgtm` 即授权提交当前修复并完成发布，无需再次询问是否 commit、打 tag 或推送。按本节执行：提交修复、更新 changelog 和 patch 版本、提交发布变更、完成发布前检查及必要的 GhosttyKit cache 预热，最后推送版本 tag 触发打包并报告结果。用户明确指定版本时覆盖默认 patch。仅讨论或配置 `lgtm` 规则不触发发布。
+在本项目中，用户输入 `lgtm` 即授权提交当前修复并完成发布，无需再次询问是否 commit、打 tag 或推送。按本节执行：提交修复、更新 changelog 和 patch 版本、提交发布变更、完成发布前检查，推送版本 tag，然后在 `develop` 上触发 release workflow 并传入该 tag，等待发布完成并报告结果。用户明确指定版本时覆盖默认 patch。仅讨论或配置 `lgtm` 规则不触发发布。
 
 发布流程与 `tctony-labs/EmacsCtl` 一致：由 release workflow 调用可复用的构建 workflow，完成 App 构建、签名、公证、DMG 打包、GitHub Release 创建和 Sparkle 更新文件发布。
 
@@ -288,12 +288,9 @@ Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmu
 
 此 fork 的 `.github/workflows/` 只保留上述两个 tctony workflow。除非用户明确要求，不要恢复上游的 CI、nightly、Cloud VM、TestFlight、Homebrew 或其他 GitHub Actions workflow。
 
-此 fork 不发布或下载 GhosttyKit 预构建 Release 产物，`build-tctony.yml` 固定使用源码构建和 GitHub Actions cache。每次更新 `ghostty` submodule 指针后，必须先将 cmux 变更推送到默认分支 `develop`，等待 `build-tctony.yml` 成功并写入按 Ghostty SHA 隔离的 cache，然后才能创建 release tag。release 调用构建 workflow 时会强制检查精确 cache key；未命中时直接失败，不会在 release 中重新构建 GhosttyKit。若 cache 被 GitHub 清理，可在 `develop` 上手动触发 `build-tctony.yml` 重新预热。
+此 fork 不发布或下载 GhosttyKit 预构建 Release 产物，`build-tctony.yml` 固定使用源码构建和 GitHub Actions cache。构建和发布 workflow 都只通过 `workflow_dispatch` 手动触发，并要求运行 ref 为默认分支 `develop`，以便缓存保存在默认分支作用域并跨版本复用。GhosttyKit cache 命中时复用，未命中时在本次构建中从源码编译并保存；不再要求提前预热或重复打包。
 
-```bash
-gh workflow run build-tctony.yml --repo tctony-labs/cmux --ref develop
-gh run watch --repo tctony-labs/cmux
-```
+发布 workflow 的运行 ref 与构建源码版本是两个独立概念：workflow 在 `develop` 上运行，构建 checkout 必须使用传入 tag 对应的 `refs/tags/<tag>`，不能用 `develop` HEAD 代替。构建记录实际 checkout 的 commit SHA，DerivedData cache 也按该源码 SHA 区分。
 
 发布前：
 
@@ -302,21 +299,19 @@ gh run watch --repo tctony-labs/cmux
 3. 提交并推送版本与 changelog 变更。
 4. 确保发布 tag 为 `v<MARKETING_VERSION>`，例如版本 `0.64.15` 对应 `v0.64.15`。
 
-推荐通过 tag push 发布：
+发布必须依次执行：正常创建并推送 tag，然后在 `develop` 上手动触发发布。推送 tag 本身不会触发打包；Agent 不能只推送 tag 就报告发布完成。
 
 ```bash
+./scripts/release-pretag-guard.sh
 git tag vX.Y.Z
 git push origin vX.Y.Z
-gh run watch --repo tctony-labs/cmux
-```
-
-也可以像 EmacsCtl 一样手动触发，并传入相同格式的 tag：
-
-```bash
 gh workflow run release-tctony.yml \
   --repo tctony-labs/cmux \
+  --ref develop \
   -f tag=vX.Y.Z
 ```
+
+触发后定位本次 workflow run，使用 `gh run watch <run-id> --repo tctony-labs/cmux` 等待完成，并核对对应 tag 的 Release 和两项资产。传入的 tag 必须与刚推送的 tag 完全一致；不得在 tag ref 上触发 workflow。
 
 发布 workflow 会校验 tag 与 App 版本是否一致，然后：
 

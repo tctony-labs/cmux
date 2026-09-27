@@ -9,14 +9,14 @@ When we change the fork, update this document and the parent submodule SHA.
 2) Commit and push to the permanent `cmux` branch of `tctony-labs/ghostty`.
 3) Update this file with the new change summary + conflict notes.
 4) In the parent repo: `git add ghostty` and commit the submodule SHA.
-5) Push the parent change to `develop` and wait for `build-tctony.yml` to populate the exact GhosttyKit cache.
-6) Create a release tag only after the `develop` build succeeds.
+5) Push the parent change to `develop`, then create and push the release tag.
+6) Dispatch `release-tctony.yml` on `develop` with that tag; the build checks out the tag and builds GhosttyKit if needed.
 
 ## tctony GhosttyKit cache policy
 
 The tctony fork does not publish or consume GhosttyKit GitHub Release artifacts. Its build workflow sets
 `CMUX_GHOSTTYKIT_NO_PREBUILT=1` and caches the source-built framework by Ghostty SHA, Xcode, platform, and relevant build inputs.
-Updating the `ghostty` submodule pointer on `develop` automatically runs `build-tctony.yml` and populates that cache. Release builds require an exact cache hit and fail with instructions to rerun the build workflow on `develop` if GitHub has evicted the cache.
+Build and release workflows are manually dispatched on `develop`, while release source is checked out from the supplied tag. This keeps caches in the default branch scope for reuse across releases. A cache miss builds GhosttyKit from source during the same run; no separate prewarming or duplicate App packaging is required.
 
 Existing `manaflow-ai/ghostty` release and checksum references below are historical records for earlier fork heads; they are not part of the tctony release path.
 

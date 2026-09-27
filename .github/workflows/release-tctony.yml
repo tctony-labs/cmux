@@ -1,9 +1,6 @@
 name: Release tctony cmux
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
@@ -12,15 +9,14 @@ on:
         type: string
 
 concurrency:
-  group: release-tctony-${{ inputs.tag || github.ref_name }}
+  group: release-tctony-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   build-package:
     uses: ./.github/workflows/build-tctony.yml
     with:
-      release_tag: ${{ inputs.tag || github.ref_name }}
-      require_ghosttykit_cache: true
+      release_tag: ${{ inputs.tag }}
     secrets: inherit
 
   publish-release:
@@ -39,7 +35,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ inputs.tag }}
           files: |
             release-assets/cmux-tctony.dmg
             release-assets/appcast.xml
