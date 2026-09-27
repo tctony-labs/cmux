@@ -58,12 +58,6 @@ if [[ ! -d "$PROJECT_DIR/ghostty" ]]; then
   exit 1
 fi
 
-if ! command -v zig >/dev/null 2>&1; then
-  echo "Error: zig is not installed." >&2
-  echo "Install via: brew install zig" >&2
-  exit 1
-fi
-
 if [[ ! -f "$PROJECT_DIR/ghostty/include/ghostty.h" ]]; then
   echo "error: ghostty/include/ghostty.h is missing. Run ./scripts/setup.sh first." >&2
   exit 1
@@ -77,8 +71,10 @@ fi
 
 GHOSTTY_SHA="$(git -C ghostty rev-parse HEAD)"
 GHOSTTYKIT_CRASH_REPORT_SUBDIR="${CMUX_GHOSTTYKIT_CRASH_REPORT_SUBDIR:-cmux/crash}"
-GHOSTTYKIT_BUILD_FLAVOR="crashsubdir-$(printf '%s' "$GHOSTTYKIT_CRASH_REPORT_SUBDIR" | tr '/=' '--')-v1"
-GHOSTTY_CLEAN_KEY="${GHOSTTY_SHA}-${GHOSTTYKIT_BUILD_FLAVOR}"
+GHOSTTY_CLEAN_KEY="$GHOSTTY_SHA"
+if [[ "$GHOSTTYKIT_CRASH_REPORT_SUBDIR" != "cmux/crash" ]]; then
+  GHOSTTY_CLEAN_KEY="$GHOSTTY_SHA-custom-$(printf '%s' "$GHOSTTYKIT_CRASH_REPORT_SUBDIR" | hash_stdin)"
+fi
 GHOSTTY_KEY="$GHOSTTY_CLEAN_KEY"
 UNTRACKED_FILES="$(git -C ghostty ls-files --others --exclude-standard)"
 if ! git -C ghostty diff --quiet --ignore-submodules=all HEAD -- || [[ -n "$UNTRACKED_FILES" ]]; then
@@ -127,84 +123,33 @@ done
 trap 'rmdir "$LOCK_DIR" >/dev/null 2>&1 || true' EXIT
 
 try_fetch_prebuilt_xcframework() {
-  # Only attempt when Ghostty submodule is clean — dirty trees won't match any
-  # published release. Opt-out via CMUX_GHOSTTYKIT_NO_PREBUILT=1.
-  #
-  # Trust model: only install prebuilt artifacts whose SHA256 is pinned in the
-  # reviewed checksum manifest for the current ghostty submodule commit.
-  # Unpinned or mismatched artifacts fall back to a local ReleaseFast build.
-  if [[ "$GHOSTTY_KEY" != "$GHOSTTY_CLEAN_KEY" ]]; then
+  if [[ "$GHOSTTY_KEY" != "$GHOSTTY_CLEAN_KEY" || "${CMUX_GHOSTTYKIT_NO_PREBUILT:-0}" == "1" \
+    || "$GHOSTTYKIT_CRASH_REPORT_SUBDIR" != "cmux/crash" ]]; then
     return 1
   fi
-  if [[ "${CMUX_GHOSTTYKIT_NO_PREBUILT:-0}" == "1" ]]; then
+  if ! GHOSTTY_SHA="$GHOSTTY_SHA" \
+    GHOSTTYKIT_CHECKSUMS_FILE="$GHOSTTYKIT_CHECKSUMS_FILE" \
+    GHOSTTYKIT_ARCHIVE_VALIDATOR="$GHOSTTYKIT_ARCHIVE_VALIDATOR" \
+    GHOSTTYKIT_OUTPUT_DIR="$LOCAL_XCFRAMEWORK" \
+    "$SCRIPT_DIR/download-prebuilt-ghosttykit.sh"; then
     return 1
   fi
-  if ! command -v curl >/dev/null 2>&1; then
-    return 1
-  fi
-
-  local url="https://github.com/manaflow-ai/ghostty/releases/download/xcframework-${GHOSTTY_CLEAN_KEY}/GhosttyKit.xcframework.tar.gz"
-  if [[ ! -f "$GHOSTTYKIT_CHECKSUMS_FILE" ]]; then
-    echo "==> Missing GhosttyKit checksum manifest; falling back to local build." >&2
-    return 1
-  fi
-
-  local expected_sha
-  if ! expected_sha="$(lookup_pinned_ghosttykit_sha256 "$GHOSTTY_SHA" "$GHOSTTYKIT_CHECKSUMS_FILE" 2>/dev/null)"; then
-    echo "==> No pinned GhosttyKit checksum for ${GHOSTTY_SHA:0:12}; falling back to local build." >&2
-    return 1
-  fi
-
-  local tmp_dir tmp_tar tmp_extract actual_sha
-  tmp_dir="$(mktemp -d "$CACHE_ROOT/.ghosttykit-prebuilt.XXXXXX")"
-  tmp_tar="$tmp_dir/GhosttyKit.xcframework.tar.gz"
-  tmp_extract="$tmp_dir/extract"
-  mkdir -p "$tmp_extract"
-  echo "==> Fetching prebuilt GhosttyKit.xcframework for ${GHOSTTY_SHA:0:12}..."
-  if ! curl -fSL --connect-timeout 10 --max-time 300 --retry 3 --retry-delay 2 --retry-all-errors -o "$tmp_tar" "$url"; then
-    rm -rf "$tmp_dir"
-    echo "==> Prebuilt xcframework not available; falling back to local build."
-    return 1
-  fi
-
-  actual_sha="$(hash_file "$tmp_tar")"
-  if [[ "$actual_sha" != "$expected_sha" ]]; then
-    rm -rf "$tmp_dir"
-    echo "==> Prebuilt xcframework checksum mismatch; falling back to local build." >&2
-    echo "    expected: $expected_sha" >&2
-    echo "    actual:   $actual_sha" >&2
-    return 1
-  fi
-
-  if ! python3 "$GHOSTTYKIT_ARCHIVE_VALIDATOR" "$tmp_tar"; then
-    rm -rf "$tmp_dir"
-    echo "==> Prebuilt xcframework archive failed validation; falling back to local build." >&2
-    return 1
-  fi
-
-  if ! tar --no-same-owner -xzf "$tmp_tar" -C "$tmp_extract"; then
-    rm -rf "$tmp_dir"
-    echo "==> Failed to extract verified prebuilt xcframework; falling back to local build." >&2
-    return 1
-  fi
-
-  local extracted="$tmp_extract/GhosttyKit.xcframework"
-  if [[ ! -d "$extracted" ]]; then
-    rm -rf "$tmp_dir"
-    echo "==> Prebuilt archive did not contain GhosttyKit.xcframework; falling back." >&2
-    return 1
-  fi
-
-  mkdir -p "$(dirname "$LOCAL_XCFRAMEWORK")"
-  rm -rf "$LOCAL_XCFRAMEWORK"
-  mv "$extracted" "$LOCAL_XCFRAMEWORK"
-  rm -rf "$tmp_dir"
   echo "$GHOSTTY_KEY" > "$LOCAL_KEY_STAMP"
   echo "$GHOSTTY_SHA" > "$LEGACY_LOCAL_SHA_STAMP"
-  return 0
 }
 
-if [[ -d "$CACHE_XCFRAMEWORK" ]]; then
+cache_is_usable() {
+  [[ -d "$1" ]] || return 1
+  if [[ "${CMUX_GHOSTTYKIT_REQUIRE_PREBUILT:-0}" == "1" ]]; then
+    local expected
+    expected="$(lookup_pinned_ghosttykit_sha256 "$GHOSTTY_CLEAN_KEY" "$GHOSTTYKIT_CHECKSUMS_FILE")" || return 1
+    [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || return 1
+    [[ "$GHOSTTY_KEY" == "$GHOSTTY_CLEAN_KEY" ]] || return 1
+    [[ -f "$1/.prebuilt_sha256" && "$(cat "$1/.prebuilt_sha256")" == "$expected" ]] || return 1
+  fi
+}
+
+if cache_is_usable "$CACHE_XCFRAMEWORK"; then
   echo "==> Reusing cached GhosttyKit.xcframework"
 else
   LOCAL_KEY=""
@@ -214,15 +159,25 @@ else
     LOCAL_KEY="$(cat "$LEGACY_LOCAL_SHA_STAMP")"
   fi
 
-  if [[ -d "$LOCAL_XCFRAMEWORK" && "$LOCAL_KEY" == "$GHOSTTY_KEY" ]]; then
+  if [[ "$LOCAL_KEY" == "$GHOSTTY_KEY" ]] && cache_is_usable "$LOCAL_XCFRAMEWORK"; then
     echo "==> Seeding cache from existing local GhosttyKit.xcframework (build key matches)"
   elif try_fetch_prebuilt_xcframework; then
     echo "==> Seeding cache from prebuilt GhosttyKit.xcframework"
   else
+    if [[ "${CMUX_GHOSTTYKIT_REQUIRE_PREBUILT:-0}" == "1" ]]; then
+      echo "error: verified GhosttyKit release required for $GHOSTTY_CLEAN_KEY; source build disabled." >&2
+      exit 1
+    fi
+    if ! command -v zig >/dev/null 2>&1; then
+      echo "error: zig is required to build GhosttyKit from source." >&2
+      exit 1
+    fi
+    rm -f "$LOCAL_XCFRAMEWORK/.prebuilt_sha256"
     echo "==> Building GhosttyKit.xcframework (this may take a few minutes)..."
     (
       cd ghostty
-      zig build -Dcrash-report-subdir="$GHOSTTYKIT_CRASH_REPORT_SUBDIR" -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
+      zig build -Dcrash-report-subdir="$GHOSTTYKIT_CRASH_REPORT_SUBDIR" \
+        -Demit-xcframework=true -Dxcframework-target=native -Doptimize=ReleaseFast
     )
     echo "$GHOSTTY_KEY" > "$LOCAL_KEY_STAMP"
     echo "$GHOSTTY_SHA" > "$LEGACY_LOCAL_SHA_STAMP"
@@ -242,9 +197,9 @@ else
   echo "==> Cached GhosttyKit.xcframework at $CACHE_XCFRAMEWORK"
 fi
 
-MACOS_ARCHIVE="$CACHE_XCFRAMEWORK/macos-arm64_x86_64/libghostty.a"
+MACOS_ARCHIVE="$CACHE_XCFRAMEWORK/macos-arm64/libghostty-internal-fat.a"
 if [[ -f "$MACOS_ARCHIVE" ]]; then
-  # Xcode 26 can fail to resolve symbols from Ghostty's universal static archive
+  # Xcode 26 can fail to resolve symbols from Ghostty's static archive
   # until its ranlib index is refreshed after reuse or copy.
   echo "==> Refreshing libghostty archive index..."
   if ! command -v xcrun >/dev/null 2>&1; then

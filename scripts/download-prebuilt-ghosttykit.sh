@@ -14,15 +14,13 @@ else
   GHOSTTY_SHA="$(git -C "$REPO_ROOT/ghostty" rev-parse HEAD)"
 fi
 
-GHOSTTYKIT_CRASH_REPORT_SUBDIR="${GHOSTTYKIT_CRASH_REPORT_SUBDIR:-cmux/crash}"
-GHOSTTYKIT_BUILD_FLAVOR="${GHOSTTYKIT_BUILD_FLAVOR:-crashsubdir-$(printf '%s' "$GHOSTTYKIT_CRASH_REPORT_SUBDIR" | tr '/=' '--')-v1}"
-TAG="${GHOSTTYKIT_RELEASE_TAG:-xcframework-$GHOSTTY_SHA-$GHOSTTYKIT_BUILD_FLAVOR}"
-ARCHIVE_NAME="${GHOSTTYKIT_ARCHIVE_NAME:-GhosttyKit.xcframework.tar.gz}"
+TAG="${GHOSTTYKIT_RELEASE_TAG:-xcframework-$GHOSTTY_SHA}"
+ARCHIVE_NAME="${GHOSTTYKIT_ARCHIVE_NAME:-GhosttyKit-${GHOSTTY_SHA}.xcframework.tar.gz}"
 OUTPUT_DIR="${GHOSTTYKIT_OUTPUT_DIR:-GhosttyKit.xcframework}"
 CHECKSUMS_FILE="${GHOSTTYKIT_CHECKSUMS_FILE:-$SCRIPT_DIR/ghosttykit-checksums.txt}"
-DOWNLOAD_URL="${GHOSTTYKIT_URL:-https://github.com/manaflow-ai/ghostty/releases/download/$TAG/$ARCHIVE_NAME}"
-DOWNLOAD_RETRIES="${GHOSTTYKIT_DOWNLOAD_RETRIES:-30}"
-DOWNLOAD_RETRY_DELAY="${GHOSTTYKIT_DOWNLOAD_RETRY_DELAY:-20}"
+DOWNLOAD_URL="${GHOSTTYKIT_URL:-https://github.com/tctony-labs/ghostty/releases/download/$TAG/$ARCHIVE_NAME}"
+DOWNLOAD_RETRIES="${GHOSTTYKIT_DOWNLOAD_RETRIES:-3}"
+DOWNLOAD_RETRY_DELAY="${GHOSTTYKIT_DOWNLOAD_RETRY_DELAY:-2}"
 DOWNLOAD_CONNECT_TIMEOUT="${GHOSTTYKIT_DOWNLOAD_CONNECT_TIMEOUT:-10}"
 DOWNLOAD_MAX_TIME="${GHOSTTYKIT_DOWNLOAD_MAX_TIME:-300}"
 ARCHIVE_VALIDATOR="${GHOSTTYKIT_ARCHIVE_VALIDATOR:-$SCRIPT_DIR/validate-xcframework-archive.py}"
@@ -47,7 +45,7 @@ EXPECTED_SHA256="$(
   ' "$CHECKSUMS_FILE" || true
 )"
 
-if [ -z "$EXPECTED_SHA256" ]; then
+if [[ ! "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Missing pinned GhosttyKit checksum for ghostty $GHOSTTY_SHA in $CHECKSUMS_FILE" >&2
   exit 1
 fi
@@ -83,5 +81,6 @@ tar --no-same-owner -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
 rm -rf "$OUTPUT_DIR"
 mv "$EXTRACT_DIR/GhosttyKit.xcframework" "$OUTPUT_DIR"
 test -d "$OUTPUT_DIR"
+printf '%s\n' "$EXPECTED_SHA256" > "$OUTPUT_DIR/.prebuilt_sha256"
 
 echo "Verified and extracted $OUTPUT_DIR"

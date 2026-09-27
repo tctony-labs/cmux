@@ -288,7 +288,9 @@ Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmu
 
 此 fork 的 `.github/workflows/` 只保留上述两个 tctony workflow。除非用户明确要求，不要恢复上游的 CI、nightly、Cloud VM、TestFlight、Homebrew 或其他 GitHub Actions workflow。
 
-此 fork 不发布或下载 GhosttyKit 预构建 Release 产物，`build-tctony.yml` 固定使用源码构建和 GitHub Actions cache。构建和发布 workflow 都只通过 `workflow_dispatch` 手动触发，并要求运行 ref 为默认分支 `develop`，以便缓存保存在默认分支作用域并跨版本复用。GhosttyKit cache 命中时复用，未命中时在本次构建中从源码编译并保存；不再要求提前预热或重复打包。
+GhosttyKit 由 `tctony-labs/ghostty` 的 `.github/workflows/ghosttykit-tctony.yml` 在 push 到 `cmux` 分支时构建并发布，固定为 macOS arm64、ReleaseFast。Release tag 为 `xcframework-<完整 Ghostty SHA>`，文件名为 `GhosttyKit-<完整 Ghostty SHA>.xcframework.tar.gz`。cmux 按 submodule SHA 下载，使用 `scripts/ghosttykit-checksums.txt` 中固定的 SHA256 校验；CI 缺少产物或校验失败时直接停止，不退回源码编译。CI 每次直接下载 Release 产物，不再保存 GhosttyKit Actions cache。Zig 工具链及其缓存仍保留，用于构建 App 附带的 Ghostty CLI helper。
+
+更新 Ghostty 时，先推送 Ghostty 的永久 `cmux` 分支并等待产物发布，再将 Release 中的 checksum entry 写入 cmux 校验清单，最后提交 submodule 指针和校验清单。首次部署也必须完成这一步，不能用占位校验值发布 cmux。构建参数固定在 Ghostty workflow；不使用额外的构建配置版本。cmux 构建和发布仍在 `develop` 上手动触发，构建传入 tag 的源码。
 
 发布 workflow 的运行 ref 与构建源码版本是两个独立概念：workflow 在 `develop` 上运行，构建 checkout 必须使用传入 tag 对应的 `refs/tags/<tag>`，不能用 `develop` HEAD 代替。构建记录实际 checkout 的 commit SHA，DerivedData cache 也按该源码 SHA 区分。
 

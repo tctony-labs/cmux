@@ -75,6 +75,13 @@ if [ -f "$SUCCESS_DIR/GhosttyKit.xcframework.tar.gz" ]; then
   exit 1
 fi
 
+EXPECTED_URL="https://github.com/tctony-labs/ghostty/releases/download/xcframework-$FIXTURE_SHA"
+EXPECTED_URL="$EXPECTED_URL/GhosttyKit-$FIXTURE_SHA.xcframework.tar.gz"
+if ! grep -Fxq "$EXPECTED_URL" "$SUCCESS_LOG"; then
+  echo "FAIL: downloader did not request the exact tctony source SHA"
+  exit 1
+fi
+
 for expected_arg in --retry --retry-delay --retry-all-errors; do
   if ! grep -Fxq -- "$expected_arg" "$SUCCESS_LOG"; then
     echo "FAIL: curl invocation missing $expected_arg"
@@ -97,7 +104,7 @@ if (
   exit 1
 fi
 
-if ! grep -Fq "GhosttyKit.xcframework.tar.gz checksum mismatch" "$MISMATCH_OUTPUT"; then
+if ! grep -Fq "xcframework.tar.gz checksum mismatch" "$MISMATCH_OUTPUT"; then
   echo "FAIL: verification helper did not report checksum mismatch"
   exit 1
 fi

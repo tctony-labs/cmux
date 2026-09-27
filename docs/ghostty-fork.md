@@ -7,23 +7,41 @@ When we change the fork, update this document and the parent submodule SHA.
 
 1) Make changes in `ghostty/`.
 2) Commit and push to the permanent `cmux` branch of `tctony-labs/ghostty`.
-3) Update this file with the new change summary + conflict notes.
+3) Wait for the GhosttyKit release and pin its SHA256 in `scripts/ghosttykit-checksums.txt`.
+   Update this file with the new change summary + conflict notes.
 4) In the parent repo: `git add ghostty` and commit the submodule SHA.
 5) Push the parent change to `develop`, then create and push the release tag.
-6) Dispatch `release-tctony.yml` on `develop` with that tag; the build checks out the tag and builds GhosttyKit if needed.
+6) Dispatch `release-tctony.yml` on `develop` with that tag; the build checks out the tag and downloads the matching GhosttyKit release.
 
-## tctony GhosttyKit cache policy
+## tctony GhosttyKit release artifacts
 
-The tctony fork does not publish or consume GhosttyKit GitHub Release artifacts. Its build workflow sets
-`CMUX_GHOSTTYKIT_NO_PREBUILT=1` and caches the source-built framework by Ghostty SHA, Xcode, platform, and relevant build inputs.
-Build and release workflows are manually dispatched on `develop`, while release source is checked out from the supplied tag. This keeps caches in the default branch scope for reuse across releases. A cache miss builds GhosttyKit from source during the same run; no separate prewarming or duplicate App packaging is required.
+The Ghostty fork's `ghosttykit-tctony.yml` publishes a macOS arm64 ReleaseFast framework on pushes to
+its permanent `cmux` branch. Toolchain versions are fixed in the workflow. Releases use
+`xcframework-<full-source-sha>` and contain `GhosttyKit-<full-source-sha>.xcframework.tar.gz`, its
+SHA256 file, and `build-info.txt`. Published releases are skipped on reruns; incomplete drafts can be retried.
+
+cmux downloads the artifact matching its submodule SHA and verifies the checksum pinned in
+`scripts/ghosttykit-checksums.txt`, then validates archive paths before extraction. CI requires a verified
+prebuilt artifact and never falls back to a source build. CI downloads the Release asset on each run without
+a GhosttyKit Actions cache. Zig installation and its toolchain cache remain necessary for the bundled
+Ghostty CLI helper, which Xcode still builds from source. SwiftPM and DerivedData caches are retained.
+Local source development can still build the framework natively.
+
+Before enabling this path for a cmux release, push the Ghostty workflow, wait for its first published artifact,
+and update the submodule pointer and checksum together. No checksum can be pinned before that artifact exists.
+The optional manual workflow input accepts a full source SHA. GitHub requires the workflow to be registered
+on the default branch before manual dispatch is available; push-triggered builds on `cmux` do not need this.
 
 Existing `manaflow-ai/ghostty` release and checksum references below are historical records for earlier fork heads; they are not part of the tctony release path.
 
 ## Current fork changes
 
-Current cmux pinned fork head: `e7ece31b5` on the permanent `cmux` branch.
-It adds behavioral coverage in `be5f0b4f2` and fixes prompt-only row clicks in
+Current cmux pinned fork head: `41646f195` on the permanent `cmux` branch.
+This adds the arm64 GhosttyKit release workflow and disables inherited workflow push triggers
+without changing terminal source. Preserve
+`.github/workflows/ghosttykit-tctony.yml` when merging upstream workflow changes.
+
+The previous head `e7ece31b5` adds behavioral coverage in `be5f0b4f2` and fixes prompt-only row clicks in
 `e7ece31b5`. A click on a hard-broken prompt row now produces no cursor movement,
 while a prompt and input sharing the same row or soft-wrapped logical line still
 allows click-to-move. During parent updates, preserve the prompt-only semantic-row
