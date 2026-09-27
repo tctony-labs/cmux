@@ -2,6 +2,12 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.24] - 2026-09-27
+
+### Changed
+- Download published arm64 GhosttyKit artifacts matched to the pinned source commit instead of rebuilding the framework during cmux packaging.
+- Publish releases automatically when version tags are pushed, while retaining manual build-only packaging on develop.
+
 ## [0.64.23] - 2026-09-27
 
 ### Added
