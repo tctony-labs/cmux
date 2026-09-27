@@ -2,6 +2,17 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.23] - 2026-09-27
+
+### Added
+- Jump from Markdown previews to the corresponding source block in Emacs with Command+Shift+Click, without extending the text selection.
+
+### Changed
+- Dispatch releases on `develop` while building the supplied tag, sharing caches across releases and building GhosttyKit on cache misses without a separate prewarming run.
+
+### Fixed
+- Preserve configuration symlinks and target file permissions when the settings script saves changes.
+
 ## [0.64.22] - 2026-09-09
 
 ### Fixed
