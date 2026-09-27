@@ -1,4 +1,5 @@
 import AppKit
+import CmuxFileOpen
 import SwiftUI
 import WebKit
 
@@ -443,6 +444,17 @@ struct MarkdownWebRenderer: NSViewRepresentable {
                 NSLog("MarkdownPanel.bridge action=\(action) body=\(body)")
 #endif
                 switch action {
+                case "openMarkdownSource":
+                    guard message.frameInfo.isMainFrame,
+                          let line = body["line"] as? Int,
+                          line > 0,
+                          line <= (lastMarkdown ?? pendingMarkdown).components(separatedBy: .newlines).count,
+                          !filePath.isEmpty else { return }
+                    NSLog("MarkdownPanel.openSource line=\(line)")
+                    PreferredEditorService(defaults: .standard).openInEmacs(
+                        URL(fileURLWithPath: filePath),
+                        lineNumber: line
+                    )
                 case "resolveMarkdownFile":
                     guard let requestId = body["requestId"] as? String,
                           let rawPath = body["path"] as? String else { return }

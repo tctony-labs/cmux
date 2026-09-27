@@ -79,6 +79,88 @@ final class MarkdownFileLinkNavigationTests {
     }
 
     @Test
+    func modifiedClickRevealsMarkdownSourceAfterRerender() async throws {
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 720, height: 360))
+        let delegate = MarkdownFileLinkShellLoadDelegate()
+        try await delegate.load(
+            MarkdownViewerAssets.shared.shellHTML(isDark: true),
+            in: webView,
+            baseURL: FileManager.default.temporaryDirectory.appendingPathComponent("source.md")
+        )
+        let markdown = """
+        ---
+        title: Example
+        ---
+        # 中文
+
+        Same
+
+        Same
+
+        - first
+          - nested
+
+        > quote
+        >
+        > next
+
+        ```swift
+        let value = 1
+        ```
+
+        [Link](https://example.com)
+        """
+        let data = try JSONSerialization.data(withJSONObject: [markdown])
+        let literal = try #require(String(data: data, encoding: .utf8))
+        let result = try await webView.evaluateJavaScript(
+            """
+            (function() {
+              var messages = [];
+              var preventedMouseDowns = [];
+              window.webkit = {messageHandlers: {cmuxLib: {postMessage: function(body) {
+                messages.push(body);
+              }}}};
+              window.__cmuxRenderMarkdown(\(literal)[0].replace(/\\n/g, '\\r\\n'));
+              function click(selector, index, modifiers) {
+                var element = document.querySelectorAll(selector)[index || 0];
+                var mouseDown = new MouseEvent('mousedown', Object.assign({
+                  bubbles: true, cancelable: true, button: 0
+                }, modifiers));
+                element.dispatchEvent(mouseDown);
+                preventedMouseDowns.push(mouseDown.defaultPrevented);
+                var event = new MouseEvent('click', Object.assign({
+                  bubbles: true, cancelable: true, button: 0
+                }, modifiers));
+                element.dispatchEvent(event);
+                return event.defaultPrevented;
+              }
+              var gesture = {metaKey: true, shiftKey: true};
+              click('h1', 0, gesture);
+              click('#content > p', 1, gesture);
+              click('li li', 0, gesture);
+              click('blockquote p', 1, gesture);
+              click('pre code.language-swift', 0, gesture);
+              var prevented = click('#content > p a', 0, gesture);
+              click('h1', 0, {metaKey: true});
+              click('h1', 0, {shiftKey: true});
+              window.__cmuxRenderMarkdown('\\n\\n# Updated');
+              click('h1', 0, gesture);
+              return {lines: messages.filter(function(m) {
+                return m.action === 'openMarkdownSource';
+              }).map(function(m) { return m.line; }), prevented: prevented,
+                preventedMouseDowns: preventedMouseDowns};
+            })();
+            """
+        )
+        let snapshot = try #require(result as? [String: Any])
+        #expect(snapshot["lines"] as? [Int] == [4, 8, 11, 15, 17, 21, 3])
+        #expect(snapshot["prevented"] as? Bool == true)
+        #expect(snapshot["preventedMouseDowns"] as? [Bool] == [
+            true, true, true, true, true, true, false, false, true
+        ])
+    }
+
+    @Test
     func fileLinkFragmentIsDecodedForHeadingLookup() {
         #expect(MarkdownPanelFileLinkResolver.fragment(from: "guide.md#section-two") == "section-two")
         #expect(MarkdownPanelFileLinkResolver.fragment(from: "guide.md#%E8%AF%A6%E7%BB%86%E4%BF%A1%E6%81%AF") == "详细信息")

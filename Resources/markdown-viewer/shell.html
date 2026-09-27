@@ -326,11 +326,12 @@ html { scroll-behavior: smooth; }
     var source = String(markdown == null ? '' : markdown).replace(/^\uFEFF/, '');
     var match = source.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/);
     if (!match) {
-      return { frontmatter: '', body: source };
+      return { frontmatter: '', body: source, bodyLine: 1 };
     }
     return {
       frontmatter: match[1] || '',
-      body: source.slice(match[0].length)
+      body: source.slice(match[0].length),
+      bodyLine: 1 + (match[0].match(/\n/g) || []).length
     };
   }
 
@@ -1001,6 +1002,41 @@ html { scroll-behavior: smooth; }
     }
   });
 
+  // Token offsets refer to normalized source, before rendering removes Markdown syntax.
+  function mapSourceLines(tokens, source, firstLine) {
+    var cursor = 0;
+    var line = firstLine;
+    tokens.forEach(function(token) {
+      var offset = source.indexOf(token.raw, cursor);
+      if (offset < 0) { return; }
+      line += (source.slice(cursor, offset).match(/\n/g) || []).length;
+      token.sourceLine = line;
+      line += (token.raw.match(/\n/g) || []).length;
+      cursor = offset + token.raw.length;
+      if (token.type === 'list') {
+        mapSourceLines(token.items, token.raw, token.sourceLine);
+      } else if (token.type === 'blockquote' || token.type === 'list_item') {
+        mapSourceLines(token.tokens || [], token.text, token.sourceLine);
+      }
+    });
+  }
+
+  // Wrap the existing renderers so highlighting, diagrams, and heading IDs stay shared.
+  var sourceRenderers = {};
+  ['heading', 'paragraph', 'code', 'blockquote', 'list', 'listitem', 'table', 'hr', 'html'].forEach(function(name) {
+    var original = marked.defaults.renderer[name];
+    sourceRenderers[name] = function(token) {
+      var html = original.call(this, token);
+      // Raw HTML must not supply its own source-location metadata.
+      if (name === 'html') {
+        html = html.replace(/\sdata-source-line\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+      }
+      if (!token.sourceLine) { return html; }
+      return html.replace(/^(\s*<[a-z][a-z0-9-]*)/i, '$1 data-source-line="' + token.sourceLine + '"');
+    };
+  });
+  marked.use({ useNewRenderer: true, renderer: sourceRenderers });
+
   // Lazy-loader: ask Swift to ship a library only when a document
   // actually contains a block that needs it.
   var libState = {};   // name -> 'pending' | 'ready'
@@ -1599,7 +1635,27 @@ html { scroll-behavior: smooth; }
     var el = ev.target && ev.target.closest && ev.target.closest('code[data-cmux-file], a[href]');
     if (el) { resolveMarkdownCandidate(el, false); }
   });
+  function markdownSourceForEvent(ev) {
+    if (ev.button !== 0 || !ev.metaKey || !ev.shiftKey || ev.altKey || ev.ctrlKey) { return null; }
+    return ev.target && ev.target.closest && ev.target.closest('[data-source-line]');
+  }
+
+  contentEl.addEventListener('mousedown', function(ev) {
+    // Shift-click extends WebKit's selection on mouse down, before the click handler runs.
+    if (markdownSourceForEvent(ev)) { ev.preventDefault(); }
+  }, true);
+
   contentEl.addEventListener('click', function(ev) {
+    var source = markdownSourceForEvent(ev);
+    if (source) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      window.webkit.messageHandlers.cmuxLib.postMessage({
+        action: 'openMarkdownSource',
+        line: Number(source.getAttribute('data-source-line'))
+      });
+      return;
+    }
     if (ev.target && ev.target.closest && ev.target.closest('.cmux-remote-image-placeholder')) {
       if (ev.target.closest('button')) { return; }
       ev.preventDefault();
@@ -1631,9 +1687,12 @@ html { scroll-behavior: smooth; }
   window.__cmuxRenderMarkdown = function(md) {
     try {
       headingSlugCounts = Object.create(null);
-      var documentParts = extractFrontmatter(md || '');
+      var documentParts = extractFrontmatter(String(md || '').replace(/\r\n?/g, '\n'));
+      var tokens = marked.lexer(documentParts.body || '');
+      mapSourceLines(tokens, documentParts.body, documentParts.bodyLine);
       var html = renderFrontmatter(documentParts.frontmatter)
-        + sanitizeRenderedHTML(marked.parse(documentParts.body || ''));
+        .replace('<details ', '<details data-source-line="1" ')
+        + sanitizeRenderedHTML(marked.parser(tokens));
       var didReplaceContent = contentEl.innerHTML !== html;
       var scrollState = didReplaceContent ? captureMarkdownScrollState() : null;
       if (didReplaceContent) {
@@ -1658,6 +1717,9 @@ html { scroll-behavior: smooth; }
     options = options || {};
     var restoreImageSources = options.restoreImageSources !== false;
     var clone = contentEl.cloneNode(true);
+    clone.querySelectorAll('[data-source-line]').forEach(function(el) {
+      el.removeAttribute('data-source-line');
+    });
     clone.querySelectorAll('.cmux-code-copy-button').forEach(function(el) {
       el.remove();
     });
