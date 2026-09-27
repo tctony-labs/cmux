@@ -274,7 +274,7 @@ Notes:
 
 ### `lgtm` 触发规则
 
-在本项目中，用户输入 `lgtm` 即授权提交当前修复并完成发布，无需再次询问是否 commit、打 tag 或推送。按本节执行：提交修复、更新 changelog 和 patch 版本、提交发布变更、完成发布前检查，推送版本 tag，然后在 `develop` 上触发 release workflow 并传入该 tag，等待发布完成并报告结果。用户明确指定版本时覆盖默认 patch。仅讨论或配置 `lgtm` 规则不触发发布。
+在本项目中，用户输入 `lgtm` 即授权提交当前修复并完成发布，无需再次询问是否 commit、打 tag 或推送。按本节执行：提交修复、更新 changelog 和 patch 版本、提交发布变更、完成发布前检查，推送版本 tag 以自动触发 release workflow，等待发布完成并报告结果。用户明确指定版本时覆盖默认 patch。仅讨论或配置 `lgtm` 规则不触发发布。
 
 发布流程与 `tctony-labs/EmacsCtl` 一致：由 release workflow 调用可复用的构建 workflow，完成 App 构建、签名、公证、DMG 打包、GitHub Release 创建和 Sparkle 更新文件发布。
 
@@ -290,9 +290,15 @@ Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmu
 
 GhosttyKit 由 `tctony-labs/ghostty` 的 `.github/workflows/ghosttykit-tctony.yml` 在 push 到 `cmux` 分支时构建并发布，固定为 macOS arm64、ReleaseFast。Release tag 为 `xcframework-<完整 Ghostty SHA>`，文件名为 `GhosttyKit-<完整 Ghostty SHA>.xcframework.tar.gz`。cmux 按 submodule SHA 下载，使用 `scripts/ghosttykit-checksums.txt` 中固定的 SHA256 校验；CI 缺少产物或校验失败时直接停止，不退回源码编译。CI 每次直接下载 Release 产物，不再保存 GhosttyKit Actions cache。Zig 工具链及其缓存仍保留，用于构建 App 附带的 Ghostty CLI helper。
 
-更新 Ghostty 时，先推送 Ghostty 的永久 `cmux` 分支并等待产物发布，再将 Release 中的 checksum entry 写入 cmux 校验清单，最后提交 submodule 指针和校验清单。首次部署也必须完成这一步，不能用占位校验值发布 cmux。构建参数固定在 Ghostty workflow；不使用额外的构建配置版本。cmux 构建和发布仍在 `develop` 上手动触发，构建传入 tag 的源码。
+更新 Ghostty 时，先推送 Ghostty 的永久 `cmux` 分支并等待产物发布，再将 Release 中的 checksum entry 写入 cmux 校验清单，最后提交 submodule 指针和校验清单。首次部署也必须完成这一步，不能用占位校验值发布 cmux。构建参数固定在 Ghostty workflow；不使用额外的构建配置版本。cmux 正式发布由版本 tag push 自动触发，构建该 tag 的源码；保留 `develop` 上不传 `release_tag` 的手动 build，供完整打包调试使用，不创建 GitHub Release。
 
-发布 workflow 的运行 ref 与构建源码版本是两个独立概念：workflow 在 `develop` 上运行，构建 checkout 必须使用传入 tag 对应的 `refs/tags/<tag>`，不能用 `develop` HEAD 代替。构建记录实际 checkout 的 commit SHA，DerivedData cache 也按该源码 SHA 区分。
+正式发布：推送 `vX.Y.Z` tag 自动触发 `release-tctony.yml`，它将该 tag 传给 `build-tctony.yml`。构建 checkout 必须使用 `refs/tags/<tag>`，不能用 `develop` HEAD 代替。构建记录实际 checkout 的 commit SHA，DerivedData cache 也按该源码 SHA 区分。
+
+调试打包：在 `develop` 上手动触发 `build-tctony.yml`，不传 `release_tag` 时构建 `develop`，执行构建、签名、公证和 DMG 打包，只上传 Actions artifact。直接运行 build workflow 即使传入 `release_tag` 也不会创建 GitHub Release。
+
+```bash
+gh workflow run build-tctony.yml --repo tctony-labs/cmux --ref develop
+```
 
 发布前：
 
@@ -301,19 +307,15 @@ GhosttyKit 由 `tctony-labs/ghostty` 的 `.github/workflows/ghosttykit-tctony.ym
 3. 提交并推送版本与 changelog 变更。
 4. 确保发布 tag 为 `v<MARKETING_VERSION>`，例如版本 `0.64.15` 对应 `v0.64.15`。
 
-发布必须依次执行：正常创建并推送 tag，然后在 `develop` 上手动触发发布。推送 tag 本身不会触发打包；Agent 不能只推送 tag 就报告发布完成。
+发布必须依次执行：运行发布前检查、提交并推送版本变更、创建并推送 tag。推送 tag 会自动触发 release，不要再手动触发同一版本，避免重复打包。
 
 ```bash
 ./scripts/release-pretag-guard.sh
 git tag vX.Y.Z
 git push origin vX.Y.Z
-gh workflow run release-tctony.yml \
-  --repo tctony-labs/cmux \
-  --ref develop \
-  -f tag=vX.Y.Z
 ```
 
-触发后定位本次 workflow run，使用 `gh run watch <run-id> --repo tctony-labs/cmux` 等待完成，并核对对应 tag 的 Release 和两项资产。传入的 tag 必须与刚推送的 tag 完全一致；不得在 tag ref 上触发 workflow。
+触发后定位该 tag 对应的 workflow run，使用 `gh run watch <run-id> --repo tctony-labs/cmux` 等待完成，并核对对应 tag 的 Release、DMG 和 appcast。不能只推送 tag 就报告发布完成。保留 release workflow 的手动入口用于必要的重试；正常发布只推送 tag。
 
 发布 workflow 会校验 tag 与 App 版本是否一致，然后：
 

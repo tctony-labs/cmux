@@ -11,7 +11,8 @@ When we change the fork, update this document and the parent submodule SHA.
    Update this file with the new change summary + conflict notes.
 4) In the parent repo: `git add ghostty` and commit the submodule SHA.
 5) Push the parent change to `develop`, then create and push the release tag.
-6) Dispatch `release-tctony.yml` on `develop` with that tag; the build checks out the tag and downloads the matching GhosttyKit release.
+6) The tag push automatically triggers `release-tctony.yml`; wait for it to build the tag and publish the release.
+   For packaging diagnostics, dispatch `build-tctony.yml` on `develop` without `release_tag`; it uploads an Actions artifact only.
 
 ## tctony GhosttyKit release artifacts
 
