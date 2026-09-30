@@ -42,4 +42,6 @@ jobs:
           files: |
             release-assets/cmux-tctony.dmg
             release-assets/appcast.xml
+            release-assets/cmux-tctony-symbols.zip
+          fail_on_unmatched_files: true
           generate_release_notes: true

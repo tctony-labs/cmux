@@ -61,6 +61,7 @@ jobs:
           echo "APP_PATH=$RUNNER_TEMP/cmux-tctony/Build/Products/Release/cmux.app" >> "$GITHUB_ENV"
           echo "APPCAST_PATH=$RUNNER_TEMP/appcast.xml" >> "$GITHUB_ENV"
           echo "DMG_PATH=$RUNNER_TEMP/cmux-tctony.dmg" >> "$GITHUB_ENV"
+          echo "SYMBOLS_PATH=$RUNNER_TEMP/cmux-tctony-symbols.zip" >> "$GITHUB_ENV"
 
       - name: Select pinned Xcode
         run: |
@@ -178,6 +179,9 @@ jobs:
       - name: Test Nucleo FFI artifact verifier
         run: ./tests/test_nucleo_ffi_artifact_verifier.sh
 
+      - name: Test Release symbol archive
+        run: python3 tests/test_release_symbols.py
+
       - name: Install Zig
         run: ./scripts/install-zig-ci.sh
 
@@ -217,6 +221,18 @@ jobs:
           CMUX_SIGNING_IDENTITY: ${{ vars.MACOS_APPLICATION_CERT_NAME }}
           CMUX_SPM_CACHE: ${{ github.workspace }}/.spm-cache
         run: ./build-cmux.sh
+
+      - name: Validate and archive Release symbols
+        run: python3 scripts/archive-release-symbols.py "$APP_PATH" "$SYMBOLS_PATH"
+
+      # Save symbols before notarization so packaging failures do not lose them.
+      - name: Upload Release symbols
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cmux-tctony-symbols
+          path: ${{ runner.temp }}/cmux-tctony-symbols.zip
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Configure Sparkle for tctony release
         if: inputs.release_tag != ''
@@ -315,6 +331,7 @@ jobs:
           path: |
             ${{ runner.temp }}/cmux-tctony.dmg
             ${{ runner.temp }}/appcast.xml
+            ${{ runner.temp }}/cmux-tctony-symbols.zip
           if-no-files-found: error
           retention-days: 14
 

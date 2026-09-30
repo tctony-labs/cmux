@@ -283,7 +283,9 @@ Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmu
 - Release workflow：`.github/workflows/release-tctony.yml`
 - 可复用构建 workflow：`.github/workflows/build-tctony.yml`
 - 构建架构：仅 `arm64`；除非用户明确要求，不要恢复 `x86_64` 或 universal 打包
-- Release 资产：`cmux-tctony.dmg`、`appcast.xml`
+- Release 资产：`cmux-tctony.dmg`、`appcast.xml`、`cmux-tctony-symbols.zip`
+- 符号 ZIP 包含主 App、cmux CLI 和 Dock 插件的 dSYM，以及提交、版本、build、架构、UUID 和 Xcode 元数据。构建后先校验并上传独立 artifact（保留 90 天），正式发布时随 Release 资产长期保存。
+- 下载、UUID 核对和 `atos` 使用方法见 [Release 符号文档](docs/release-symbols.md)。
 - Sparkle feed：`https://github.com/tctony-labs/cmux/releases/latest/download/appcast.xml`
 
 此 fork 的 `.github/workflows/` 只保留上述两个 tctony workflow。除非用户明确要求，不要恢复上游的 CI、nightly、Cloud VM、TestFlight、Homebrew 或其他 GitHub Actions workflow。
@@ -323,7 +325,7 @@ git push origin vX.Y.Z
 2. 复用组织级 Apple 证书完成签名和公证。
 3. 从 `SPARKLE_PRIVATE_KEY` 派生公钥，将 tctony Sparkle feed 和公钥注入 App。
 4. 生成带 EdDSA 签名的 `appcast.xml`。
-5. 创建对应 tag 的 GitHub Release，并上传 DMG 和 appcast。
+5. 创建对应 tag 的 GitHub Release，并上传 DMG、appcast 和符号 ZIP。
 
 需要以下组织级配置：
 
