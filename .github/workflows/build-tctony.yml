@@ -261,24 +261,8 @@ jobs:
             cmux.tctony.entitlements \
             "$APPLE_SIGNING_IDENTITY"
 
-      - name: Notarize app
-        env:
-          APPLE_ID: ${{ vars.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          NOTARY_ZIP="$RUNNER_TEMP/cmux-tctony-notary.zip"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$NOTARY_ZIP"
-          xcrun notarytool submit "$NOTARY_ZIP" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_ID_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait
-          xcrun stapler staple "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
-          rm -f "$NOTARY_ZIP"
-
+      # Both direct downloads and Sparkle distribute this DMG. Its notarization
+      # covers the nested signed app; no separate app ZIP submission is needed.
       - name: Create and notarize DMG
         env:
           APPLE_ID: ${{ vars.APPLE_ID }}
@@ -298,13 +282,23 @@ jobs:
             -format UDZO \
             "$DMG_PATH"
           codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG_PATH"
+          codesign --verify --strict --verbose=2 "$DMG_PATH"
           xcrun notarytool submit "$DMG_PATH" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait --output-format json | tee "$RUNNER_TEMP/cmux-tctony-notary.json"
+          python3 - "$RUNNER_TEMP/cmux-tctony-notary.json" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1]) as result_file:
+              result = json.load(result_file)
+          if result.get("status") != "Accepted":
+              sys.exit(f"Notarization failed: {result}")
+          PY
           xcrun stapler staple "$DMG_PATH"
           xcrun stapler validate "$DMG_PATH"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
 
       - name: Generate Sparkle appcast
         if: inputs.release_tag != ''
