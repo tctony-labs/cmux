@@ -2,6 +2,11 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.26] - 2026-10-12
+
+### Changed
+- Upgrade the GitHub Release action to v3.0.3 with native Node.js 24 support and publish releases after all assets have uploaded.
+
 ## [0.64.25] - 2026-10-12
 
 ### Added
