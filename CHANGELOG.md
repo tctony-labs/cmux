@@ -2,6 +2,14 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.25] - 2026-10-12
+
+### Added
+- Publish validated Release debug symbols for the app, CLI, and Dock plugin alongside release assets.
+
+### Changed
+- Submit only the final DMG for notarization, with explicit acceptance, ticket, and Gatekeeper checks before generating the Sparkle appcast.
+
 ## [0.64.24] - 2026-09-27
 
 ### Changed
