@@ -376,12 +376,6 @@ struct SplitContainerView<Content: View, EmptyContent: View>: NSViewRepresentabl
 
     private func makeHostingController(for node: SplitNode) -> NonDraggableHostingController<AnyView> {
         let hostingController = NonDraggableHostingController(rootView: AnyView(makeView(for: node)))
-        if #available(macOS 13.0, *) {
-            // NSSplitView owns pane geometry. Keep NSHostingController from publishing
-            // intrinsic-size constraints that force a minimum pane width.
-            hostingController.sizingOptions = []
-        }
-
         let hostedView = hostingController.view
         // NSSplitView lays out arranged subviews by setting frames. Leaving Auto Layout
         // enabled on these NSHostingViews can allow them to compress to 0 during
