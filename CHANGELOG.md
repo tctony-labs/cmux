@@ -2,6 +2,14 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.27] - 2026-10-15
+
+### Fixed
+- Avoid accumulating SwiftUI observations during hidden pane size measurements, which could stall foreground restoration on macOS 14.
+
+### Changed
+- Vendor Bonsplit sources directly so pane hosting fixes are maintained in the cmux repository.
+
 ## [0.64.26] - 2026-10-12
 
 ### Changed
