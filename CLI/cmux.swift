@@ -1199,7 +1199,7 @@ private final class ClaudeHookSessionStore {
         }
     }
 
-    private static func processExists(_ pid: Int?) -> Bool {
+    fileprivate static func processExists(_ pid: Int?) -> Bool {
         guard let pid, pid > 0 else { return false }
         if kill(pid_t(pid), 0) == 0 {
             return true
@@ -28908,6 +28908,25 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         )
 #endif
         let pidKey = "\(def.statusKey).\(sessionId.isEmpty ? "default" : sessionId)"
+        func agentPID(mapped: ClaudeHookSessionRecord?) -> Int? {
+            guard let cachedPID = mapped?.pid else { return inferredPID }
+            // Child hooks must retain a live root PID, but a resumed session must not
+            // keep registering its previous, exited process with the sidebar sweep.
+            guard !ClaudeHookSessionStore.processExists(cachedPID) else { return cachedPID }
+            telemetry.breadcrumb(
+                "\(def.name)-hook.pid.refresh",
+                data: ["previous_pid": cachedPID, "current_pid": inferredPID ?? 0]
+            )
+#if DEBUG
+            agentHookDebugLog(
+                "agentHook.pid.refresh agent=\(def.name) previous=\(cachedPID) "
+                    + "current=\(inferredPID ?? 0)",
+                socketPath: client.socketPath,
+                env: env
+            )
+#endif
+            return inferredPID
+        }
         var didSendFeedTelemetry = false
         // Destructive session teardown shared by a genuine (non-turn-boundary)
         // `session-end` and the dedicated `session-finalize` action: consume the
@@ -29176,18 +29195,6 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 fallbackKind: def.name,
                 cwd: hookCwd ?? mapped?.cwd
             )
-            if !suppressVisibleMutations {
-                try? recordAgentTurnDiffBaseline(
-                    agent: def.name,
-                    sessionId: sessionId,
-                    turnId: input.turnId,
-                    cwd: hookCwd ?? mapped?.cwd,
-                    workspaceId: workspaceId,
-                    surfaceId: surfaceId,
-                    env: env,
-                    preserveExistingTurnBaseline: true
-                )
-            }
             if !sessionId.isEmpty {
                 try? store.upsert(
                     sessionId: sessionId,
@@ -29242,6 +29249,20 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     surfaceId: surfaceId
                 )
             }
+            // Git baseline capture can outlive the hook timeout. Persist and publish
+            // the current process before doing that work so cleanup sees a live PID.
+            if !suppressVisibleMutations {
+                try? recordAgentTurnDiffBaseline(
+                    agent: def.name,
+                    sessionId: sessionId,
+                    turnId: input.turnId,
+                    cwd: hookCwd ?? mapped?.cwd,
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    env: env,
+                    preserveExistingTurnBaseline: true
+                )
+            }
 
         case .promptSubmit:
             let mapped = sessionId.isEmpty ? nil : (try? store.lookup(sessionId: sessionId))
@@ -29253,7 +29274,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             let workspaceId = target.workspaceId
             let surfaceId = target.surfaceId
             sendAgentFeedTelemetryUnlessSuppressed(workspaceId: workspaceId)
-            let pid = mapped?.pid ?? inferredPID
+            let pid = agentPID(mapped: mapped)
             let launchCommand = agentLaunchCommandFromEnvironment(
                 env,
                 fallbackPID: pid,
@@ -29306,19 +29327,6 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 nestedPromptEvent: nestedPromptSubmit,
                 env: env
             )
-            if !suppressVisibleMutations {
-                try? recordAgentTurnDiffBaseline(
-                    agent: def.name,
-                    sessionId: sessionId,
-                    turnId: input.turnId,
-                    cwd: hookCwd ?? mapped?.cwd,
-                    workspaceId: workspaceId,
-                    surfaceId: surfaceId,
-                    env: env,
-                    preserveExistingTurnBaseline: activePromptDepth > 0 &&
-                        (normalizedHookValue(input.turnId).map { $0 == activePromptTurnId } ?? false)
-                )
-            }
             if !sessionId.isEmpty, !suppressVisibleMutations {
                 try? store.upsert(
                     sessionId: sessionId,
@@ -29384,6 +29392,20 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             } else {
                 telemetry.breadcrumb("\(def.name)-hook.prompt-submit.nested-suppressed")
             }
+            if !suppressVisibleMutations {
+                try? recordAgentTurnDiffBaseline(
+                    agent: def.name,
+                    sessionId: sessionId,
+                    turnId: input.turnId,
+                    cwd: hookCwd ?? mapped?.cwd,
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    env: env,
+                    preserveExistingTurnBaseline: activePromptDepth > 0 && (
+                        normalizedHookValue(input.turnId).map { $0 == activePromptTurnId } ?? false
+                    )
+                )
+            }
             if def.name == "codex", !sessionId.isEmpty, !suppressVisibleMutations {
                 let leasePath = createCodexMonitorLease(
                     sessionId: sessionId,
@@ -29436,7 +29458,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     surfaceId: target.surfaceId,
                     cwd: hookCwd ?? mapped?.cwd,
                     transcriptPath: input.transcriptPath ?? mapped?.transcriptPath,
-                    pid: mapped?.pid ?? inferredPID,
+                    pid: agentPID(mapped: mapped),
                     launchCommand: mapped?.launchCommand,
                     lastBody: assistantMessage
                 )
@@ -29459,7 +29481,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             let workspaceId = target.workspaceId
             let surfaceId = target.surfaceId
             sendAgentFeedTelemetry(workspaceId: workspaceId)
-            let pid = mapped?.pid ?? inferredPID
+            let pid = agentPID(mapped: mapped)
             let codexFailure: CodexHookFailureSummary?
             let codexSubagentSignals: CodexTranscriptSubagentSignals
             if def.name == "codex" {
@@ -29792,7 +29814,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             let workspaceId = target.workspaceId
             let surfaceId = target.surfaceId
             sendAgentFeedTelemetryUnlessSuppressed(workspaceId: workspaceId)
-            let pid = mapped?.pid ?? inferredPID
+            let pid = agentPID(mapped: mapped)
             let launchCommand = agentLaunchCommandFromEnvironment(
                 env,
                 fallbackPID: pid,
@@ -29954,7 +29976,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             }
 
             if !sessionId.isEmpty {
-                let pid = mapped?.pid ?? inferredPID
+                let pid = agentPID(mapped: mapped)
                 let launchCommand = agentLaunchCommandFromEnvironment(
                     env,
                     fallbackPID: pid,
