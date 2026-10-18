@@ -78,6 +78,57 @@ final class MarkdownFileLinkNavigationTests {
 #endif
     }
 
+    @Test(arguments: [false, true])
+    func localSourceLinksOpenThroughNativeBridge(absoluteLink: Bool) async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux source links \(UUID().uuidString)")
+        let sourceURL = directoryURL.appendingPathComponent("docs/xwapi.md")
+        let targetURL = directoryURL.appendingPathComponent("contracts/proto/xiaowei/xwapi.proto")
+        let directories = [
+            sourceURL.deletingLastPathComponent(),
+            targetURL.deletingLastPathComponent()
+        ]
+        for directory in directories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+        try "syntax = \"proto3\";".write(to: targetURL, atomically: true, encoding: .utf8)
+        let href = absoluteLink
+            ? targetURL.absoluteString
+            : "../contracts/proto/xiaowei/xwapi.proto"
+        let markdown = "[xwapi.proto](\(href))"
+        try markdown.write(to: sourceURL, atomically: true, encoding: .utf8)
+        let data = try JSONSerialization.data(withJSONObject: [markdown])
+        let literal = try #require(String(data: data, encoding: .utf8))
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 720, height: 360))
+        let delegate = MarkdownFileLinkShellLoadDelegate()
+        try await delegate.load(
+            MarkdownViewerAssets.shared.shellHTML(isDark: true),
+            in: webView,
+            baseURL: sourceURL
+        )
+
+        let result = try await webView.evaluateJavaScript(
+            """
+            var fileLinks = [];
+            window.webkit = {messageHandlers: {cmuxLib: {postMessage: function(body) {
+              if (body.action === 'openLocalFile') { fileLinks.push(body.href); }
+            }}}};
+            window.__cmuxRenderMarkdown(\(literal)[0]);
+            var anchor = document.querySelector('#content a');
+            var event = new MouseEvent('click', {bubbles: true, cancelable: true});
+            anchor.dispatchEvent(event);
+            ({prevented: event.defaultPrevented, urls: fileLinks});
+            """
+        )
+        let snapshot = try #require(result as? [String: Any])
+        #expect(snapshot["prevented"] as? Bool == true)
+        #expect(snapshot["urls"] as? [String] == [targetURL.absoluteString])
+    }
+
     @Test
     func modifiedClickRevealsMarkdownSourceAfterRerender() async throws {
         let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 720, height: 360))
