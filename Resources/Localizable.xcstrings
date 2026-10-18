@@ -131966,6 +131966,12 @@
             "state": "translated",
             "value": "パスをコピー"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制路径"
+          }
         }
       }
     },
@@ -147526,6 +147532,12 @@
             "state": "translated",
             "value": "HTMLとしてコピーしました"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制为HTML"
+          }
         }
       }
     },
@@ -147542,6 +147554,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Markdownとしてコピーしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制为Markdown"
+          }
+        }
+      }
+    },
+    "markdown.copyConfirm.path": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Path copied"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路径已复制"
           }
         }
       }
@@ -147652,6 +147687,12 @@
             "state": "translated",
             "value": "テキスト編集を表示"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示文本编辑"
+          }
         }
       }
     },
@@ -147689,6 +147730,23 @@
         }
       }
     },
+    "markdown.toolbar.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
+          }
+        }
+      }
+    },
     "markdown.toolbar.copyHTML": {
       "extractionState": "manual",
       "localizations": {
@@ -147702,6 +147760,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "HTMLとしてコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制HTML"
           }
         }
       }
@@ -147719,6 +147783,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Markdownとしてコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制Markdown"
           }
         }
       }

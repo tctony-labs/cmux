@@ -32,11 +32,14 @@ struct MarkdownPanelView: View {
     @AppStorage(FilePreviewWordWrapSettings.key) private var fileEditorWordWrap = FilePreviewWordWrapSettings.defaultEnabled
 
     private enum CopyConfirmation: Equatable {
+        case path
         case markdown
         case html
 
         var label: String {
             switch self {
+            case .path:
+                return String(localized: "markdown.copyConfirm.path", defaultValue: "Path copied")
             case .markdown:
                 return String(localized: "markdown.copyConfirm.markdown", defaultValue: "Copied as Markdown")
             case .html:
@@ -138,6 +141,7 @@ struct MarkdownPanelView: View {
             markdownModeButton
             MarkdownPanelToolbar(
                 confirmation: copyConfirmation?.label,
+                onCopyPath: { copyFilePath() },
                 onCopyMarkdown: { copyAsMarkdown() },
                 onCopyHTML: { copyAsHTML() }
             )
@@ -152,7 +156,7 @@ struct MarkdownPanelView: View {
         switch panel.displayMode {
         case .preview:
             PanelHeaderIconButton(
-                systemName: "doc.plaintext",
+                systemName: "square.and.pencil",
                 label: String(localized: "markdown.mode.showTextEdit", defaultValue: "Show TextEdit"),
                 action: { panel.setDisplayMode(.text) }
             )
@@ -206,6 +210,13 @@ struct MarkdownPanelView: View {
     }
 
     // MARK: - Copy actions
+
+    private func copyFilePath() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(panel.filePath, forType: .string)
+        flashCopyConfirmation(.path)
+    }
 
     private func copyAsMarkdown() {
         let pb = NSPasteboard.general
@@ -272,6 +283,7 @@ struct MarkdownPanelView: View {
 
 private struct MarkdownPanelToolbar: View {
     let confirmation: String?
+    let onCopyPath: () -> Void
     let onCopyMarkdown: () -> Void
     let onCopyHTML: () -> Void
 
@@ -285,25 +297,40 @@ private struct MarkdownPanelToolbar: View {
                     .transition(.opacity)
             }
 
-            toolbarButton(
-                title: String(localized: "markdown.toolbar.copyMarkdown", defaultValue: "Copy as Markdown"),
-                systemImage: "doc.on.doc",
-                action: onCopyMarkdown
-            )
-            toolbarButton(
-                title: String(localized: "markdown.toolbar.copyHTML", defaultValue: "Copy as HTML"),
-                systemImage: "chevron.left.forwardslash.chevron.right",
-                action: onCopyHTML
-            )
+            Menu {
+                Button(action: onCopyPath) {
+                    Text(String(
+                        localized: "fileExplorer.contextMenu.copyPath",
+                        defaultValue: "Copy Path"
+                    ))
+                }
+                Button(action: onCopyMarkdown) {
+                    Text(String(
+                        localized: "markdown.toolbar.copyMarkdown",
+                        defaultValue: "Copy as Markdown"
+                    ))
+                }
+                Button(action: onCopyHTML) {
+                    Text(String(
+                        localized: "markdown.toolbar.copyHTML",
+                        defaultValue: "Copy as HTML"
+                    ))
+                }
+            } label: {
+                PanelHeaderIconGlyph(systemName: "doc.on.doc")
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .foregroundColor(.secondary)
+            .frame(width: 20, height: 20)
+            .help(copyLabel)
+            .accessibilityLabel(copyLabel)
         }
         .animation(.easeOut(duration: 0.15), value: confirmation)
     }
 
-    private func toolbarButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        PanelHeaderIconButton(
-            systemName: systemImage,
-            label: title,
-            action: action
-        )
+    private var copyLabel: String {
+        String(localized: "markdown.toolbar.copy", defaultValue: "Copy")
     }
 }
