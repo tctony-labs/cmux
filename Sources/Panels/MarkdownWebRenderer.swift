@@ -129,6 +129,9 @@ struct MarkdownWebRenderer: NSViewRepresentable {
         var panelId: UUID = UUID()
         var workspaceId: UUID = UUID()
         var filePath: String = ""
+        var openExternalFile: (URL) -> Void = {
+            PreferredEditorService(defaults: .standard).open($0)
+        }
         private var pendingMarkdown: String = ""
         private var pendingTheme: MarkdownWebTheme = .resolve(backgroundColor: GhosttyBackgroundTheme.currentColor())
         private var lastMarkdown: String? = nil
@@ -441,7 +444,7 @@ struct MarkdownWebRenderer: NSViewRepresentable {
             }
             if let action = body["action"] as? String {
 #if DEBUG
-                NSLog("MarkdownPanel.bridge action=\(action) body=\(body)")
+                NSLog("MarkdownPanel.bridge action=%@ body=%@", action, String(describing: body))
 #endif
                 switch action {
                 case "openMarkdownSource":
@@ -462,6 +465,12 @@ struct MarkdownWebRenderer: NSViewRepresentable {
                 case "openMarkdownFile":
                     guard let rawPath = body["path"] as? String else { return }
                     openMarkdownFileLink(rawPath)
+                case "openLocalFile":
+                    guard message.frameInfo.isMainFrame,
+                          let href = body["href"] as? String,
+                          let url = URL(string: href),
+                          url.isFileURL else { return }
+                    handleExternalLink(url)
                 default:
                     break
                 }
@@ -819,7 +828,7 @@ struct MarkdownWebRenderer: NSViewRepresentable {
         /// can't be located in any workspace.
         private func handleExternalLink(_ url: URL) {
 #if DEBUG
-            NSLog("MarkdownPanel.handleExternalLink url=\(url.absoluteString)")
+            NSLog("MarkdownPanel.handleExternalLink url=%@", url.absoluteString)
 #endif
             // First preference: links that resolve to local markdown files
             // open as markdown tabs in cmux, not in the browser.
@@ -832,8 +841,14 @@ struct MarkdownWebRenderer: NSViewRepresentable {
                 return
             }
 
+            if url.isFileURL,
+               url.host == nil || url.host == "" || url.host == "localhost" {
+                openExternalFile(URL(fileURLWithPath: url.path))
+                return
+            }
+
             // Schemes the in-app browser doesn't (and shouldn't) handle:
-            // mailto:, tel:, slack://, vscode://, file:// non-markdown, etc.
+            // mailto:, tel:, slack://, vscode://, hosted file:// URLs, etc.
             // Route those to the system handler so the user's default app picks them up.
             if let scheme = url.scheme?.lowercased(),
                scheme != "http", scheme != "https" {

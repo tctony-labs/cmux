@@ -1672,7 +1672,18 @@ html { scroll-behavior: smooth; }
     }
     var el = ev.target && ev.target.closest && ev.target.closest('code[data-cmux-file], a[href]');
     var rawPath = markdownCandidateForElement(el);
-    if (!rawPath) { return; }
+    if (!rawPath) {
+      // WebKit can block file navigation before calling WKNavigationDelegate.
+      // Deliver local file clicks through the same native bridge as markdown links.
+      if (anchor && anchor.protocol === 'file:') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        window.webkit.messageHandlers.cmuxLib.postMessage({
+          action: 'openLocalFile', href: anchor.href
+        });
+      }
+      return;
+    }
     // For markdown-looking paths, always stop WebKit navigation first.
     // If resolution fails, the click is intentionally a no-op rather
     // than loading raw file:// text into the viewer or opening a browser.

@@ -103,7 +103,18 @@ final class MarkdownFileLinkNavigationTests {
         try markdown.write(to: sourceURL, atomically: true, encoding: .utf8)
         let data = try JSONSerialization.data(withJSONObject: [markdown])
         let literal = try #require(String(data: data, encoding: .utf8))
-        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 720, height: 360))
+        let coordinator = MarkdownWebRenderer.Coordinator()
+        coordinator.bind(panelId: UUID(), workspaceId: UUID(), filePath: sourceURL.path)
+        var openedURLs: [URL] = []
+        coordinator.openExternalFile = { openedURLs.append($0) }
+
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(coordinator, name: "cmuxLib")
+        let webView = WKWebView(
+            frame: NSRect(x: 0, y: 0, width: 720, height: 360),
+            configuration: configuration
+        )
+        defer { configuration.userContentController.removeScriptMessageHandler(forName: "cmuxLib") }
         let delegate = MarkdownFileLinkShellLoadDelegate()
         try await delegate.load(
             MarkdownViewerAssets.shared.shellHTML(isDark: true),
@@ -113,20 +124,18 @@ final class MarkdownFileLinkNavigationTests {
 
         let result = try await webView.evaluateJavaScript(
             """
-            var fileLinks = [];
-            window.webkit = {messageHandlers: {cmuxLib: {postMessage: function(body) {
-              if (body.action === 'openLocalFile') { fileLinks.push(body.href); }
-            }}}};
             window.__cmuxRenderMarkdown(\(literal)[0]);
             var anchor = document.querySelector('#content a');
             var event = new MouseEvent('click', {bubbles: true, cancelable: true});
             anchor.dispatchEvent(event);
-            ({prevented: event.defaultPrevented, urls: fileLinks});
+            event.defaultPrevented;
             """
         )
-        let snapshot = try #require(result as? [String: Any])
-        #expect(snapshot["prevented"] as? Bool == true)
-        #expect(snapshot["urls"] as? [String] == [targetURL.absoluteString])
+        #expect(result as? Bool == true)
+        for _ in 0..<100 where openedURLs.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(openedURLs == [targetURL])
     }
 
     @Test
