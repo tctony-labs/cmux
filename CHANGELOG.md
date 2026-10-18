@@ -2,6 +2,14 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.29] - 2026-10-19
+
+### Changed
+- Consolidate Markdown preview copy actions
+- Schedule nightly patch releases from develop
+- test: cover resumed agent PID recovery
+- fix: refresh stale agent PIDs before lifecycle updates
+
 ## [0.64.28] - 2026-10-18
 
 ### Fixed
