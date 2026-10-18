@@ -1,6 +1,9 @@
 name: Release tctony cmux
 
 on:
+  schedule:
+    # 03:00 Asia/Shanghai (UTC+8), every day.
+    - cron: "0 19 * * *"
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
@@ -11,19 +14,63 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 concurrency:
-  group: release-tctony-${{ inputs.tag || github.ref_name }}
+  group: release-tctony
   cancel-in-progress: false
 
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.scheduled.outputs.tag || steps.requested.outputs.tag }}
+
+    steps:
+      - name: Checkout develop for scheduled release
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: refs/heads/develop
+          fetch-depth: 0
+
+      - name: Test scheduled release preparation
+        if: github.event_name == 'schedule'
+        run: python3 tests/test_prepare_scheduled_release.py
+
+      - name: Prepare scheduled patch release
+        if: github.event_name == 'schedule'
+        id: scheduled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/prepare-scheduled-release.py
+
+      - name: Select requested release tag
+        if: github.event_name != 'schedule'
+        id: requested
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
   build-package:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.tag != ''
     uses: ./.github/workflows/build-tctony.yml
     with:
-      release_tag: ${{ inputs.tag || github.ref_name }}
+      release_tag: ${{ needs.prepare-release.outputs.tag }}
     secrets: inherit
 
   publish-release:
-    needs: build-package
+    needs: [prepare-release, build-package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -38,7 +85,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.prepare-release.outputs.tag }}
+          draft: false
+          prerelease: false
           files: |
             release-assets/cmux-tctony.dmg
             release-assets/appcast.xml

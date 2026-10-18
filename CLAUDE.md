@@ -278,7 +278,7 @@ Notes:
 
 发布流程与 `tctony-labs/EmacsCtl` 一致：由 release workflow 调用可复用的构建 workflow，完成 App 构建、签名、公证、DMG 打包、GitHub Release 创建和 Sparkle 更新文件发布。
 
-Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmux.sh`。本地只运行 workflow 和脚本的静态检查、受影响的 CI 测试、`git diff --check` 与 `./scripts/release-pretag-guard.sh`；实际 App 构建、签名、公证和打包只在 tag 触发的 GitHub Actions 中执行。本规则覆盖上方 `tctony fork` 中修改工程配置后需要 reload 的一般规则。
+Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmux.sh`。本地只运行 workflow 和脚本的静态检查、受影响的 CI 测试、`git diff --check` 与 `./scripts/release-pretag-guard.sh`；实际 App 构建、签名、公证和打包只在 GitHub Actions 中构建发布 tag 的源码。本规则覆盖上方 `tctony fork` 中修改工程配置后需要 reload 的一般规则。
 
 - Release workflow：`.github/workflows/release-tctony.yml`
 - 可复用构建 workflow：`.github/workflows/build-tctony.yml`
@@ -292,9 +292,13 @@ Release 过程中不要在本地运行 `reload.sh`、`xcodebuild` 或 `build-cmu
 
 GhosttyKit 由 `tctony-labs/ghostty` 的 `.github/workflows/ghosttykit-tctony.yml` 在 push 到 `cmux` 分支时构建并发布，固定为 macOS arm64、ReleaseFast。Release tag 为 `xcframework-<完整 Ghostty SHA>`，文件名为 `GhosttyKit-<完整 Ghostty SHA>.xcframework.tar.gz`。cmux 按 submodule SHA 下载，使用 `scripts/ghosttykit-checksums.txt` 中固定的 SHA256 校验；CI 缺少产物或校验失败时直接停止，不退回源码编译。CI 每次直接下载 Release 产物，不再保存 GhosttyKit Actions cache。Zig 工具链及其缓存仍保留，用于构建 App 附带的 Ghostty CLI helper。
 
-更新 Ghostty 时，先推送 Ghostty 的永久 `cmux` 分支并等待产物发布，再将 Release 中的 checksum entry 写入 cmux 校验清单，最后提交 submodule 指针和校验清单。首次部署也必须完成这一步，不能用占位校验值发布 cmux。构建参数固定在 Ghostty workflow；不使用额外的构建配置版本。cmux 正式发布由版本 tag push 自动触发，构建该 tag 的源码；保留 `develop` 上不传 `release_tag` 的手动 build，供完整打包调试使用，不创建 GitHub Release。
+更新 Ghostty 时，先推送 Ghostty 的永久 `cmux` 分支并等待产物发布，再将 Release 中的 checksum entry 写入 cmux 校验清单，最后提交 submodule 指针和校验清单。首次部署也必须完成这一步，不能用占位校验值发布 cmux。构建参数固定在 Ghostty workflow；不使用额外的构建配置版本。cmux 正式发布由手动版本 tag push 或下文的定时任务触发，构建该 tag 的源码；保留 `develop` 上不传 `release_tag` 的手动 build，供完整打包调试使用，不创建 GitHub Release。
 
 正式发布：推送 `vX.Y.Z` tag 自动触发 `release-tctony.yml`，它将该 tag 传给 `build-tctony.yml`。构建 checkout 必须使用 `refs/tags/<tag>`，不能用 `develop` HEAD 代替。构建记录实际 checkout 的 commit SHA，DerivedData cache 也按该源码 SHA 区分。
+
+定时发布：同一个 `release-tctony.yml` 每天北京时间 03:00（UTC 19:00，cron `0 19 * * *`）检查 `develop`。调度依赖默认分支保持为 `develop`。`scripts/prepare-scheduled-release.py` 比较当前版本 tag 与分支提交；无新提交且对应 Release 的三个资产均已上传时跳过，有新提交则固定 bump patch、按提交标题生成英文 changelog、递增 build、运行发布前检查、提交并推送版本变更，再创建并推送 tag。
+
+定时任务使用 `GITHUB_TOKEN`，其推送的 tag 不会再次触发 push workflow；因此直接在同一次运行中将准备好的 tag 传给已有构建、发布 jobs，无需额外 PAT 或人工触发。所有正式发布串行执行，避免版本和 Sparkle feed 相互覆盖。Release 未成功发布或资产不完整时复用原 tag 重试，不继续升版本；如果版本提交已推送而 tag 推送失败，则通过 `Release vX.Y.Z (scheduled)` 提交恢复原版本。准备流程的本地集成测试为 `python3 tests/test_prepare_scheduled_release.py`，定时任务也会先执行这些测试。
 
 调试打包：在 `develop` 上手动触发 `build-tctony.yml`，不传 `release_tag` 时构建 `develop`，执行构建、签名、公证和 DMG 打包，只上传 Actions artifact。直接运行 build workflow 即使传入 `release_tag` 也不会创建 GitHub Release。
 
@@ -309,7 +313,7 @@ gh workflow run build-tctony.yml --repo tctony-labs/cmux --ref develop
 3. 提交并推送版本与 changelog 变更。
 4. 确保发布 tag 为 `v<MARKETING_VERSION>`，例如版本 `0.64.15` 对应 `v0.64.15`。
 
-发布必须依次执行：运行发布前检查、提交并推送版本变更、创建并推送 tag。推送 tag 会自动触发 release，不要再手动触发同一版本，避免重复打包。
+发布必须依次执行：运行发布前检查、提交并推送版本变更、创建并推送 tag。手动推送 tag 会自动触发 release；定时任务按上文在同一次运行中继续发布。不要再手动触发同一版本，避免重复打包。
 
 ```bash
 ./scripts/release-pretag-guard.sh
@@ -317,7 +321,7 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-触发后定位该 tag 对应的 workflow run，使用 `gh run watch <run-id> --repo tctony-labs/cmux` 等待完成，并核对对应 tag 的 Release、DMG 和 appcast。不能只推送 tag 就报告发布完成。保留 release workflow 的手动入口用于必要的重试；正常发布只推送 tag。
+触发后定位该 tag 对应的 workflow run，使用 `gh run watch <run-id> --repo tctony-labs/cmux` 等待完成，并核对对应 tag 的 Release、DMG 和 appcast。不能只推送 tag 就报告发布完成。保留 release workflow 的手动入口用于必要的重试；正常手动发布只推送 tag。
 
 发布 workflow 会校验 tag 与 App 版本是否一致，然后：
 
