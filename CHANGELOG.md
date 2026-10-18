@@ -2,6 +2,12 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.28] - 2026-10-18
+
+### Fixed
+- Open local source file links from Markdown previews in the preferred external editor.
+- Preserve percent-encoded file URLs in Markdown link debug logs.
+
 ## [0.64.27] - 2026-10-15
 
 ### Fixed
