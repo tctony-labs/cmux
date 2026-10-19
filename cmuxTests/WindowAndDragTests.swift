@@ -6,6 +6,7 @@ import Darwin
 import PDFKit
 import Testing
 import SwiftUI
+import Observation
 import UniformTypeIdentifiers
 import WebKit
 import ObjectiveC.runtime
@@ -1917,6 +1918,113 @@ final class DraggableFolderHitTests: XCTestCase {
 
 @MainActor
 @Suite struct MainWindowHostingViewTests {
+    @Observable
+    fileprivate final class MeasurementModel<Value> {
+        var value: Value
+
+        init(value: Value) {
+            self.value = value
+        }
+    }
+
+    private final class MeasurementProbe {
+        var bodyEvaluations = 0
+        var renderedValue: Int?
+        var nativeView: NSView?
+    }
+
+    private struct MeasurementContent: View {
+        let model: MeasurementModel<Int>
+        let probe: MeasurementProbe
+        let revision: Int
+
+        var body: some View {
+            // Test-only instrumentation; this counter does not invalidate views.
+            probe.bodyEvaluations += 1
+            return NativeMeasurementContent(value: model.value + revision, probe: probe)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private struct NativeMeasurementContent: NSViewRepresentable {
+        let value: Int
+        let probe: MeasurementProbe
+
+        func makeNSView(context: Context) -> NSView {
+            let view = NSView()
+            probe.nativeView = view
+            return view
+        }
+
+        func updateNSView(_ view: NSView, context: Context) {
+            probe.renderedValue = value
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func hiddenConstraintUpdatesDoNotRepeatedlyEvaluateContent(invalidateIntrinsicSize: Bool) {
+        _ = NSApplication.shared
+        let model = MeasurementModel(value: 0)
+        let probe = MeasurementProbe()
+        let host = MainWindowHostingView(
+            rootView: MeasurementContent(model: model, probe: probe, revision: 0)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.contentView = host
+        defer { window.contentView = nil }
+
+        for revision in 0..<512 {
+            host.rootView = MeasurementContent(model: model, probe: probe, revision: revision)
+            if invalidateIntrinsicSize {
+                host.invalidateIntrinsicContentSize()
+            }
+            // Querying the overridden size getters misses SwiftUI's internal
+            // constraint measurement path on macOS 14.
+            host.updateConstraints()
+        }
+
+        #expect(probe.bodyEvaluations <= 1)
+        #expect(!window.isVisible)
+    }
+
+    @Test
+    func deferredContentRendersAndFollowsContainerResize() throws {
+        _ = NSApplication.shared
+        let model = MeasurementModel(value: 0)
+        let probe = MeasurementProbe()
+        let host = MainWindowHostingView(
+            rootView: MeasurementContent(model: model, probe: probe, revision: 0)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.contentView = host
+        defer { window.contentView = nil }
+
+        for revision in 0..<32 {
+            host.rootView = MeasurementContent(model: model, probe: probe, revision: revision)
+            host.updateConstraints()
+        }
+        host.layout()
+        #expect(probe.renderedValue == 31)
+        let nativeView = try #require(probe.nativeView)
+
+        model.value = 100
+        window.setContentSize(NSSize(width: 640, height: 480))
+        host.setFrameSize(NSSize(width: 640, height: 480))
+        host.layout()
+        #expect(probe.renderedValue == 131)
+        #expect(probe.nativeView === nativeView)
+        #expect(nativeView.frame.size == host.bounds.size)
+        #expect(host.bounds.size == NSSize(width: 640, height: 480))
+        #expect(host.fittingSize == CmuxMainWindow.minimumContentSize)
+        #expect(host.intrinsicContentSize == CmuxMainWindow.minimumContentSize)
+    }
+
     @Test func testReportsPolicyMinimumInsteadOfChildMinimum() {
         _ = NSApplication.shared
 
