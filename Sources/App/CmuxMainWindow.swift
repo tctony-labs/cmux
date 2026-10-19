@@ -29,6 +29,10 @@ final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
 
     required init(rootView: Content) {
         super.init(rootView: rootView)
+        // AppKit owns window geometry; the overrides above supply its minimum.
+        // macOS 14 still measures SwiftUI content during updateConstraints,
+        // accumulating observations while hidden unless automatic sizing is off.
+        sizingOptions = []
         addLayoutGuide(zeroSafeAreaLayoutGuide)
         NSLayoutConstraint.activate([
             zeroSafeAreaLayoutGuide.leadingAnchor.constraint(equalTo: leadingAnchor),
