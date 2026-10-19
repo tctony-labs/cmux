@@ -2,6 +2,13 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.30] - 2026-10-20
+
+### Changed
+- chore: schedule nightly releases at 03:33 Shanghai time
+- Cover hidden main-window constraint measurement accumulation
+- Disable automatic content sizing in main-window hosts
+
 ## [0.64.29] - 2026-10-19
 
 ### Changed
