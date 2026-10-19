@@ -296,7 +296,7 @@ GhosttyKit 由 `tctony-labs/ghostty` 的 `.github/workflows/ghosttykit-tctony.ym
 
 正式发布：推送 `vX.Y.Z` tag 自动触发 `release-tctony.yml`，它将该 tag 传给 `build-tctony.yml`。构建 checkout 必须使用 `refs/tags/<tag>`，不能用 `develop` HEAD 代替。构建记录实际 checkout 的 commit SHA，DerivedData cache 也按该源码 SHA 区分。
 
-定时发布：同一个 `release-tctony.yml` 每天北京时间 03:00（UTC 19:00，cron `0 19 * * *`）检查 `develop`。调度依赖默认分支保持为 `develop`。`scripts/prepare-scheduled-release.py` 比较当前版本 tag 与分支提交；无新提交且对应 Release 的三个资产均已上传时跳过，有新提交则固定 bump patch、按提交标题生成英文 changelog、递增 build、运行发布前检查、提交并推送版本变更，再创建并推送 tag。
+定时发布：同一个 `release-tctony.yml` 每天北京时间 03:33（UTC 19:33，cron `33 19 * * *`）检查 `develop`。调度依赖默认分支保持为 `develop`。`scripts/prepare-scheduled-release.py` 比较当前版本 tag 与分支提交；无新提交且对应 Release 的三个资产均已上传时跳过，有新提交则固定 bump patch、按提交标题生成英文 changelog、递增 build、运行发布前检查、提交并推送版本变更，再创建并推送 tag。
 
 定时任务使用 `GITHUB_TOKEN`，其推送的 tag 不会再次触发 push workflow；因此直接在同一次运行中将准备好的 tag 传给已有构建、发布 jobs，无需额外 PAT 或人工触发。所有正式发布串行执行，避免版本和 Sparkle feed 相互覆盖。Release 未成功发布或资产不完整时复用原 tag 重试，不继续升版本；如果版本提交已推送而 tag 推送失败，则通过 `Release vX.Y.Z (scheduled)` 提交恢复原版本。准备流程的本地集成测试为 `python3 tests/test_prepare_scheduled_release.py`，定时任务也会先执行这些测试。
 
