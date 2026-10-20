@@ -2,6 +2,12 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.31] - 2026-10-21
+
+### Changed
+- test: reproduce markdown preview resizing after host transfer
+- fix: isolate markdown web view from retiring layout hosts
+
 ## [0.64.30] - 2026-10-20
 
 ### Changed
