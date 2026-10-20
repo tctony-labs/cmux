@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import SwiftUI
+import Testing
 import WebKit
 import XCTest
 
@@ -1622,5 +1624,72 @@ private final class MarkdownRemoteImageHoldingSchemeHandler: NSObject, WKURLSche
         for task in openTasks {
             task.didFailWithError(error)
         }
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct MarkdownRendererHostingTests {
+    @Test(arguments: [NSSize.zero, NSSize(width: 320, height: 240)])
+    func retiringHostCannotResizeTransferredPreview(retiringSize: NSSize) throws {
+        let session = MarkdownRendererSession()
+        let renderer = MarkdownWebRenderer(
+            markdown: "# Retained preview\n",
+            theme: MarkdownWebTheme.resolve(backgroundColor: .windowBackgroundColor),
+            backgroundColor: .windowBackgroundColor,
+            panelId: UUID(),
+            workspaceId: UUID(),
+            filePath: "/tmp/cmux-markdown-hosting.md",
+            fontSize: 18,
+            fontFamily: MarkdownFontFamily.systemDefault,
+            maxContentWidth: MarkdownMaxWidthSettings.defaultCSSPixels,
+            session: session,
+            onRequestPanelFocus: {}
+        )
+        let frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let window = NSWindow(
+            contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        let root = NSView(frame: frame)
+        window.contentView = root
+        defer {
+            session.close()
+            window.close()
+        }
+
+        let retiringHost = NSHostingView(rootView: AnyView(renderer))
+        retiringHost.frame = NSRect(x: 0, y: 0, width: 640, height: 480)
+        root.addSubview(retiringHost)
+        retiringHost.layoutSubtreeIfNeeded()
+        let coordinator = renderer.makeCoordinator()
+        let webView = try #require(coordinator.webView)
+        #expect(webView.isDescendant(of: retiringHost))
+
+        // During zoom or a drop, the replacement mounts before the old tree retires.
+        let currentHost = NSHostingView(rootView: AnyView(renderer))
+        currentHost.frame = frame
+        root.addSubview(currentHost)
+        currentHost.layoutSubtreeIfNeeded()
+        #expect(webView.isDescendant(of: currentHost))
+        #expect(webView.frame.size == frame.size)
+
+        // SwiftUI may still lay out the retiring representable after the transfer.
+        retiringHost.setFrameSize(retiringSize)
+        retiringHost.layoutSubtreeIfNeeded()
+        #expect(webView.frame.size == frame.size)
+
+        retiringHost.rootView = AnyView(EmptyView())
+        retiringHost.layoutSubtreeIfNeeded()
+        #expect(webView.isDescendant(of: currentHost))
+        #expect(webView.frame.size == frame.size)
+        #expect(webView.navigationDelegate === coordinator)
+        #expect(webView.onPointerDown != nil)
+        #expect(coordinator.webView === webView)
+
+        let resized = NSSize(width: 720, height: 520)
+        currentHost.setFrameSize(resized)
+        currentHost.layoutSubtreeIfNeeded()
+        #expect(webView.frame.size == resized)
     }
 }
