@@ -27,9 +27,24 @@ struct MarkdownWebRenderer: NSViewRepresentable {
         session.coordinator(panelId: panelId, workspaceId: workspaceId, filePath: filePath)
     }
 
-    func makeNSView(context: Context) -> WKWebView {
+    func makeNSView(context: Context) -> NSView {
+        // SwiftUI owns this container, never the session-owned web view. During
+        // zoom/drop transitions the retiring representable can still receive
+        // layout updates after the replacement has mounted the same web view.
+        let container = NSView(frame: .zero)
+        let webView = makeWebView(context: context)
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.width, .height]
+        container.addSubview(webView)
+        return container
+    }
+
+    private func makeWebView(context: Context) -> MarkdownWebView {
         if let webView = context.coordinator.webView {
             if webView.superview != nil {
+#if DEBUG
+                cmuxDebugLog("markdown.host.transfer panel=\(panelId)")
+#endif
                 webView.removeFromSuperview()
             }
             webView.onPointerDown = onRequestPanelFocus
@@ -82,11 +97,15 @@ struct MarkdownWebRenderer: NSViewRepresentable {
         return webView
     }
 
-    func updateNSView(_ nsView: WKWebView, context: Context) {
+    func updateNSView(_ container: NSView, context: Context) {
+        // Ignore late updates from a representable whose web view has moved.
+        guard let nsView = context.coordinator.webView,
+              nsView.superview === container else { return }
+
         // Re-bind panel metadata in case SwiftUI recreated the wrapper while
         // the panel-owned renderer session kept the same coordinator.
         context.coordinator.bind(panelId: panelId, workspaceId: workspaceId, filePath: filePath)
-        (nsView as? MarkdownWebView)?.onPointerDown = onRequestPanelFocus
+        nsView.onPointerDown = onRequestPanelFocus
         applyBackground(to: nsView)
         applyAppearance(to: nsView, isDark: theme.isDark)
         context.coordinator.setFontSize(fontSize)
@@ -95,15 +114,12 @@ struct MarkdownWebRenderer: NSViewRepresentable {
         context.coordinator.update(markdown: markdown, theme: theme)
     }
 
-    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
-        if let retainedWebView = coordinator.webView, retainedWebView === nsView {
-            return
-        }
-        nsView.configuration.userContentController.removeScriptMessageHandler(forName: "cmuxLib")
-        nsView.navigationDelegate = nil
-        nsView.uiDelegate = nil
-        (nsView as? MarkdownWebView)?.onPointerDown = nil
-        coordinator.cancelImageLoads()
+    static func dismantleNSView(_ container: NSView, coordinator: Coordinator) {
+        // Only detach our own child. A replacement host may already own it,
+        // and the panel session keeps its delegates and document alive.
+        guard let webView = coordinator.webView,
+              webView.superview === container else { return }
+        webView.removeFromSuperview()
     }
 
     /// WebKit's `prefers-color-scheme` media query reflects the WKWebView's

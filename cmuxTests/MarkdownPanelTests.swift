@@ -382,37 +382,6 @@ final class MarkdownPanelTests: XCTestCase {
         )
     }
 
-    func testMarkdownRendererDismantleKeepsPointerHandlerForReusedWebView() {
-        let coordinator = MarkdownWebRenderer.Coordinator()
-        let reusedWebView = MarkdownWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        coordinator.webView = reusedWebView
-
-        var reusedPointerDownCount = 0
-        reusedWebView.onPointerDown = {
-            reusedPointerDownCount += 1
-        }
-
-        MarkdownWebRenderer.dismantleNSView(reusedWebView, coordinator: coordinator)
-        reusedWebView.onPointerDown?()
-
-        XCTAssertEqual(
-            reusedPointerDownCount,
-            1,
-            "SwiftUI teardown for an old renderer wrapper must not clear the pointer handler on the reused markdown web view."
-        )
-
-        let discardedWebView = MarkdownWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        var discardedPointerDownCount = 0
-        discardedWebView.onPointerDown = {
-            discardedPointerDownCount += 1
-        }
-
-        MarkdownWebRenderer.dismantleNSView(discardedWebView, coordinator: coordinator)
-        discardedWebView.onPointerDown?()
-
-        XCTAssertEqual(discardedPointerDownCount, 0)
-    }
-
     func testMarkdownRendererKeepsRecoveryBudgetAfterShellReload() {
         let coordinator = MarkdownWebRenderer.Coordinator()
         let webView = MarkdownWebView(frame: .zero, configuration: WKWebViewConfiguration())
@@ -1630,6 +1599,34 @@ private final class MarkdownRemoteImageHoldingSchemeHandler: NSObject, WKURLSche
 @MainActor
 @Suite(.serialized)
 struct MarkdownRendererHostingTests {
+    @Test
+    func dismantlingOnlyDetachesTheCurrentHostsChild() {
+        let coordinator = MarkdownWebRenderer.Coordinator()
+        let webView = MarkdownWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        coordinator.webView = webView
+        webView.navigationDelegate = coordinator
+        defer { coordinator.close() }
+        var pointerDownCount = 0
+        webView.onPointerDown = { pointerDownCount += 1 }
+
+        let retiringHost = NSView()
+        let currentHost = NSView()
+        retiringHost.addSubview(webView)
+        currentHost.addSubview(webView)
+
+        MarkdownWebRenderer.dismantleNSView(retiringHost, coordinator: coordinator)
+        #expect(webView.superview === currentHost)
+        webView.onPointerDown?()
+        #expect(pointerDownCount == 1)
+
+        MarkdownWebRenderer.dismantleNSView(currentHost, coordinator: coordinator)
+        #expect(webView.superview == nil)
+        #expect(coordinator.webView === webView)
+        #expect(webView.navigationDelegate === coordinator)
+        webView.onPointerDown?()
+        #expect(pointerDownCount == 2)
+    }
+
     @Test(arguments: [NSSize.zero, NSSize(width: 320, height: 240)])
     func retiringHostCannotResizeTransferredPreview(retiringSize: NSSize) throws {
         let session = MarkdownRendererSession()
