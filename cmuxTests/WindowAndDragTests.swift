@@ -1991,6 +1991,32 @@ final class DraggableFolderHitTests: XCTestCase {
     }
 
     @Test
+    func hiddenLayoutUpdatesDoNotRepeatedlyEvaluateContent() {
+        _ = NSApplication.shared
+        let model = MeasurementModel(value: 0)
+        let probe = MeasurementProbe()
+        let host = MainWindowHostingView(
+            rootView: MeasurementContent(model: model, probe: probe, revision: 0)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.contentView = host
+        defer { window.contentView = nil }
+
+        for revision in 0..<512 {
+            host.rootView = MeasurementContent(model: model, probe: probe, revision: revision)
+            // Disabling automatic constraint measurement does not stop this
+            // ordinary layout path from registering unchanged observations.
+            host.layout()
+        }
+
+        #expect(probe.bodyEvaluations <= 1)
+        #expect(!window.isVisible)
+    }
+
+    @Test
     func deferredContentRendersAndFollowsContainerResize() throws {
         _ = NSApplication.shared
         let model = MeasurementModel(value: 0)
