@@ -1,8 +1,14 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
     private let zeroSafeAreaLayoutGuide = NSLayoutGuide()
+    private let screenLockObserver: ScreenLockObserver
+    private let renderingNotificationCenter: NotificationCenter
+    private var hasDeferredLayout = false
+    private var renderingStateObserver: (any NSObjectProtocol)?
+    private var occlusionObserver: (any NSObjectProtocol)?
 
     override var safeAreaInsets: NSEdgeInsets { NSEdgeInsetsZero }
     override var safeAreaRect: NSRect { bounds }
@@ -27,7 +33,13 @@ final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
         return isMinimalModeTitlebarControlHit(window: window, locationInWindow: event.locationInWindow)
     }
 
-    required init(rootView: Content) {
+    required convenience init(rootView: Content) {
+        self.init(rootView: rootView, screenLockObserver: .shared)
+    }
+
+    init(rootView: Content, screenLockObserver: ScreenLockObserver) {
+        self.screenLockObserver = screenLockObserver
+        renderingNotificationCenter = screenLockObserver.notificationCenter
         super.init(rootView: rootView)
         // AppKit owns window geometry; the overrides above supply its minimum.
         // macOS 14 still measures SwiftUI content during updateConstraints,
@@ -40,9 +52,84 @@ final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
             zeroSafeAreaLayoutGuide.topAnchor.constraint(equalTo: topAnchor),
             zeroSafeAreaLayoutGuide.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+        renderingStateObserver = renderingNotificationCenter.addObserver(
+            forName: ScreenLockObserver.renderingStateDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            MainActor.assumeIsolated {
+                guard let self,
+                      let source = notification.object as? ScreenLockObserver,
+                      source === self.screenLockObserver else { return }
+                self.resumeDeferredLayoutIfPossible()
+            }
+        }
     }
 
-    deinit {}
+    private var shouldDeferLayout: Bool {
+        if screenLockObserver.isRenderingSuspended || isHiddenOrHasHiddenAncestor { return true }
+        return window.map { !$0.occlusionState.contains(.visible) } ?? false
+    }
+
+    override var needsLayout: Bool {
+        // AppKit must not continuously retry a dirty SwiftUI graph while the
+        // session cannot render it. Preserve the request for the resume pass.
+        get { !shouldDeferLayout && super.needsLayout }
+        set {
+            if newValue, shouldDeferLayout {
+                hasDeferredLayout = true
+            } else {
+                super.needsLayout = newValue
+            }
+        }
+    }
+
+    override func layout() {
+        // Even with sizingOptions disabled, ordinary hidden layout evaluates
+        // SwiftUI and accumulates observations on macOS 14. A locked session
+        // can still report its windows as visible, so check both sources.
+        guard !shouldDeferLayout else {
+            hasDeferredLayout = true
+            return
+        }
+        hasDeferredLayout = false
+        super.layout()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+            self.occlusionObserver = nil
+        }
+        if let window {
+            occlusionObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.resumeDeferredLayoutIfPossible() }
+            }
+        }
+        resumeDeferredLayoutIfPossible()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        resumeDeferredLayoutIfPossible()
+    }
+
+    private func resumeDeferredLayoutIfPossible() {
+        guard hasDeferredLayout, !shouldDeferLayout else { return }
+        // Request one AppKit pass with the latest model and geometry. Do not
+        // replay the layouts skipped while locked or force a drawing loop.
+        needsLayout = true
+    }
+
+    isolated deinit {
+        if let token = renderingStateObserver { renderingNotificationCenter.removeObserver(token) }
+        if let token = occlusionObserver { NotificationCenter.default.removeObserver(token) }
+    }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {

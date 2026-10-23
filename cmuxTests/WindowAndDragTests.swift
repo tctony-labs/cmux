@@ -1933,6 +1933,43 @@ final class DraggableFolderHitTests: XCTestCase {
         var nativeView: NSView?
     }
 
+    private final class LayoutWindow: NSWindow {
+        var contentIsVisible = true
+        override var occlusionState: NSWindow.OcclusionState {
+            contentIsVisible ? [.visible] : []
+        }
+    }
+
+    private func makeLayoutFixture(initiallyLocked: Bool = false) -> (
+        model: MeasurementModel<Int>, probe: MeasurementProbe,
+        host: MainWindowHostingView<MeasurementContent>, window: LayoutWindow,
+        observer: ScreenLockObserver, lockCenter: NotificationCenter, workspaceCenter: NotificationCenter
+    ) {
+        _ = NSApplication.shared
+        let lockCenter = NotificationCenter()
+        let workspaceCenter = NotificationCenter()
+        let observer = ScreenLockObserver(
+            lockNotificationCenter: lockCenter,
+            workspaceNotificationCenter: workspaceCenter,
+            notificationCenter: NotificationCenter(),
+            initiallyLocked: initiallyLocked
+        )
+        let model = MeasurementModel(value: 0)
+        let probe = MeasurementProbe()
+        let host = MainWindowHostingView(
+            rootView: MeasurementContent(model: model, probe: probe, revision: 0),
+            screenLockObserver: observer
+        )
+        // Report visibility without showing a window or stealing focus. The
+        // real lock capture likewise kept reporting its window as on-screen.
+        let window = LayoutWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.contentView = host
+        return (model, probe, host, window, observer, lockCenter, workspaceCenter)
+    }
+
     private struct MeasurementContent: View {
         let model: MeasurementModel<Int>
         let probe: MeasurementProbe
@@ -2018,17 +2055,8 @@ final class DraggableFolderHitTests: XCTestCase {
 
     @Test
     func deferredContentRendersAndFollowsContainerResize() throws {
-        _ = NSApplication.shared
-        let model = MeasurementModel(value: 0)
-        let probe = MeasurementProbe()
-        let host = MainWindowHostingView(
-            rootView: MeasurementContent(model: model, probe: probe, revision: 0)
-        )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
-            styleMask: [.borderless], backing: .buffered, defer: false
-        )
-        window.contentView = host
+        let fixture = makeLayoutFixture()
+        let (model, probe, host, window) = (fixture.model, fixture.probe, fixture.host, fixture.window)
         defer { window.contentView = nil }
 
         for revision in 0..<32 {
@@ -2049,6 +2077,177 @@ final class DraggableFolderHitTests: XCTestCase {
         #expect(host.bounds.size == NSSize(width: 640, height: 480))
         #expect(host.fittingSize == CmuxMainWindow.minimumContentSize)
         #expect(host.intrinsicContentSize == CmuxMainWindow.minimumContentSize)
+    }
+
+    @Test
+    func lockedLayoutUpdatesCoalesceEvenWhenWindowRemainsVisible() throws {
+        let fixture = makeLayoutFixture()
+        let (model, probe, host, window) = (fixture.model, fixture.probe, fixture.host, fixture.window)
+        defer { window.contentView = nil }
+        host.layout()
+        let nativeView = try #require(probe.nativeView)
+        let initialEvaluations = probe.bodyEvaluations
+
+        fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+        for revision in 0..<512 {
+            host.rootView = MeasurementContent(model: model, probe: probe, revision: revision)
+            host.layout()
+        }
+        #expect(window.occlusionState.contains(.visible))
+        #expect(probe.bodyEvaluations == initialEvaluations)
+        #expect(probe.renderedValue == 0)
+
+        model.value = 100
+        window.setContentSize(NSSize(width: 640, height: 480))
+        host.setFrameSize(NSSize(width: 640, height: 480))
+        host.needsLayout = false
+        fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        #expect(host.needsLayout)
+        host.layoutSubtreeIfNeeded()
+        #expect(probe.renderedValue == 611)
+        #expect(probe.bodyEvaluations == initialEvaluations + 1)
+        #expect(probe.nativeView === nativeView)
+        #expect(nativeView.frame.size == host.bounds.size)
+        #expect(host.bounds.size == NSSize(width: 640, height: 480))
+    }
+
+    @Test
+    func startupWhileLockedDefersContentUntilUnlock() {
+        let fixture = makeLayoutFixture(initiallyLocked: true)
+        defer { fixture.window.contentView = nil }
+        for revision in 0..<512 {
+            fixture.host.rootView = MeasurementContent(model: fixture.model, probe: fixture.probe, revision: revision)
+            fixture.host.layout()
+        }
+        #expect(fixture.probe.bodyEvaluations == 0)
+        fixture.host.needsLayout = false
+        fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        #expect(fixture.host.needsLayout)
+        fixture.host.layoutSubtreeIfNeeded()
+        #expect(fixture.probe.renderedValue == 511)
+        #expect(fixture.probe.bodyEvaluations == 1)
+    }
+
+    @Test
+    func unlockWaitsForOcclusionToEnd() {
+        let fixture = makeLayoutFixture(initiallyLocked: true)
+        defer { fixture.window.contentView = nil }
+        fixture.window.contentIsVisible = false
+        fixture.host.layout()
+        fixture.host.needsLayout = false
+        fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        #expect(!fixture.host.needsLayout)
+        #expect(fixture.probe.bodyEvaluations == 0)
+
+        fixture.window.contentIsVisible = true
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: fixture.window)
+        #expect(fixture.host.needsLayout)
+        fixture.host.layoutSubtreeIfNeeded()
+        #expect(fixture.probe.bodyEvaluations == 1)
+    }
+
+    @Test
+    func resumeWaitsForDisplayWakeAndActiveSession() {
+        let fixture = makeLayoutFixture(initiallyLocked: true)
+        defer { fixture.window.contentView = nil }
+        fixture.workspaceCenter.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        fixture.workspaceCenter.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        fixture.workspaceCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+        fixture.host.layout()
+        fixture.host.needsLayout = false
+
+        fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        #expect(!fixture.host.needsLayout)
+        fixture.workspaceCenter.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        #expect(!fixture.host.needsLayout)
+        fixture.workspaceCenter.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        #expect(!fixture.host.needsLayout)
+        fixture.workspaceCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        #expect(fixture.host.needsLayout)
+        fixture.host.layoutSubtreeIfNeeded()
+        #expect(fixture.probe.bodyEvaluations == 1)
+    }
+
+    @Test
+    func unhideResumesDeferredLayout() {
+        let fixture = makeLayoutFixture()
+        defer { fixture.window.contentView = nil }
+        fixture.host.layout()
+        let initialEvaluations = fixture.probe.bodyEvaluations
+        fixture.host.isHidden = true
+        fixture.host.rootView = MeasurementContent(model: fixture.model, probe: fixture.probe, revision: 27)
+        fixture.host.layout()
+        #expect(fixture.probe.bodyEvaluations == initialEvaluations)
+        #expect(!fixture.host.needsLayout)
+
+        fixture.host.isHidden = false
+        #expect(fixture.host.needsLayout)
+        fixture.host.layoutSubtreeIfNeeded()
+        #expect(fixture.probe.renderedValue == 27)
+    }
+
+    @Test
+    func movingToAnotherWindowRebindsOcclusionObservation() {
+        let fixture = makeLayoutFixture(initiallyLocked: true)
+        let nextWindow = LayoutWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        nextWindow.contentIsVisible = false
+        defer { nextWindow.contentView = nil }
+        fixture.host.layout()
+        fixture.window.contentView = nil
+        nextWindow.contentView = fixture.host
+        fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: fixture.window)
+        fixture.host.layoutSubtreeIfNeeded()
+        #expect(fixture.probe.bodyEvaluations == 0)
+
+        nextWindow.contentIsVisible = true
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: nextWindow)
+        #expect(fixture.host.needsLayout)
+        fixture.host.layoutSubtreeIfNeeded()
+        #expect(fixture.probe.bodyEvaluations == 1)
+    }
+
+    @Test
+    func hostReleasesLockAndWindowObservers() {
+        let fixture = makeLayoutFixture()
+        weak var releasedHost: NSView?
+        autoreleasepool {
+            let host = MainWindowHostingView(rootView: Color.clear, screenLockObserver: fixture.observer)
+            fixture.window.contentView = host
+            releasedHost = host
+            host.layout()
+            fixture.window.contentView = nil
+        }
+        #expect(releasedHost == nil)
+        fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+        fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        #expect(releasedHost == nil)
+    }
+
+    @Test
+    func lockObserverTransitionsAreIdempotent() {
+        let fixture = makeLayoutFixture()
+        defer { fixture.window.contentView = nil }
+        let events = MeasurementProbe()
+        let token = fixture.observer.notificationCenter.addObserver(
+            forName: ScreenLockObserver.renderingStateDidChangeNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { events.bodyEvaluations += 1 }
+        }
+        defer { fixture.observer.notificationCenter.removeObserver(token) }
+        for _ in 0..<3 {
+            fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+        }
+        #expect(fixture.observer.isLockedObserved)
+        #expect(events.bodyEvaluations == 1)
+        for _ in 0..<3 {
+            fixture.lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        }
+        #expect(!fixture.observer.isRenderingSuspended)
+        #expect(events.bodyEvaluations == 2)
     }
 
     @Test func testReportsPolicyMinimumInsteadOfChildMinimum() {
