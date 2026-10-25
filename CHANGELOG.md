@@ -2,6 +2,11 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.32] - 2026-10-25
+
+### Fixed
+- Coalesce main-window layout updates while the screen is locked or the window cannot render.
+
 ## [0.64.31] - 2026-10-21
 
 ### Changed
