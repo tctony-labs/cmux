@@ -7,8 +7,9 @@ final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
     private let screenLockObserver: ScreenLockObserver
     private let renderingNotificationCenter: NotificationCenter
     private var hasDeferredLayout = false
-    private var renderingStateObserver: (any NSObjectProtocol)?
-    private var occlusionObserver: (any NSObjectProtocol)?
+    // Only the main actor mutates these tokens; NotificationCenter removal is thread-safe.
+    private nonisolated(unsafe) var renderingStateObserver: (any NSObjectProtocol)?
+    private nonisolated(unsafe) var occlusionObserver: (any NSObjectProtocol)?
 
     override var safeAreaInsets: NSEdgeInsets { NSEdgeInsetsZero }
     override var safeAreaRect: NSRect { bounds }
@@ -126,7 +127,8 @@ final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
         needsLayout = true
     }
 
-    isolated deinit {
+    // Swift 6.2 crashes lowering isolated deinit on this generic NSHostingView subclass.
+    deinit {
         if let token = renderingStateObserver { renderingNotificationCenter.removeObserver(token) }
         if let token = occlusionObserver { NotificationCenter.default.removeObserver(token) }
     }

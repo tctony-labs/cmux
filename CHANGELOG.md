@@ -6,6 +6,7 @@ All notable changes to cmux are documented here.
 
 ### Fixed
 - Coalesce main-window layout updates while the screen is locked or the window cannot render.
+- Avoid a Swift 6.2 compiler crash when building the main-window hosting view for Release.
 
 ## [0.64.31] - 2026-10-21
 
