@@ -1917,7 +1917,6 @@ final class DraggableFolderHitTests: XCTestCase {
 
 
 @MainActor
-@MainActor
 @Suite struct WorkspaceObservationBridgeTests {
     @MainActor
     private final class ObservationLifetime {}
@@ -1964,6 +1963,7 @@ final class DraggableFolderHitTests: XCTestCase {
     }
 }
 
+@MainActor
 @Suite struct MainWindowHostingViewTests {
     @Observable
     fileprivate final class MeasurementModel<Value> {
