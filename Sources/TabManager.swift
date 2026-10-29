@@ -232,7 +232,11 @@ class TabManager: ObservableObject {
     // the legacy @Published property-observer side effects at identical
     // timing (objectWillChange + bridge publishers in willSet, selection
     // side effects in didSet).
-    let workspaces = WorkspacesModel<Workspace>()
+    // The host hooks below already publish every change through this
+    // ObservableObject and its field publishers. A second Observation
+    // subscription accumulates during hidden SwiftUI graph updates on macOS 14,
+    // which bypass MainWindowHostingView.layout and its lock-screen guard.
+    let workspaces = WorkspacesModel<Workspace>(observationEnabled: false)
 
     var tabs: [Workspace] {
         get { workspaces.tabs }
