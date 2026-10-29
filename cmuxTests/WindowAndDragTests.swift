@@ -1917,6 +1917,53 @@ final class DraggableFolderHitTests: XCTestCase {
 
 
 @MainActor
+@MainActor
+@Suite struct WorkspaceObservationBridgeTests {
+    @MainActor
+    private final class ObservationLifetime {}
+
+    private final class WeakObservationLifetime {
+        weak var value: ObservationLifetime?
+
+        init(_ value: ObservationLifetime) {
+            self.value = value
+        }
+    }
+
+    private func observeLegacyRead(
+        _ manager: TabManager,
+        property: Int
+    ) -> WeakObservationLifetime {
+        let lifetime = ObservationLifetime()
+        let weakLifetime = WeakObservationLifetime(lifetime)
+        withObservationTracking {
+            switch property {
+            case 0: _ = manager.tabs
+            case 1: _ = manager.selectedTabId
+            default: _ = manager.workspaceGroups
+            }
+        } onChange: {
+            withExtendedLifetime(lifetime) {}
+        }
+        return weakLifetime
+    }
+
+    @Test(arguments: [0, 1, 2])
+    func repeatedLegacyReadsDoNotRetainObservationCallbacks(property: Int) {
+        let manager = TabManager(autoWelcomeIfNeeded: false)
+        // A hidden SwiftUI body can run for unrelated @Published updates even
+        // when MainWindowHostingView.layout never runs. Track the same stable
+        // read repeatedly: the existing Combine bridge already owns updates,
+        // so it must not also leave Observation callbacks in the child model.
+        let observations = (0..<128).map { _ in
+            observeLegacyRead(manager, property: property)
+        }
+
+        #expect(observations.allSatisfy { $0.value == nil })
+        withExtendedLifetime(manager) {}
+    }
+}
+
 @Suite struct MainWindowHostingViewTests {
     @Observable
     fileprivate final class MeasurementModel<Value> {
