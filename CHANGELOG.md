@@ -2,6 +2,11 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.33] - 2026-11-02
+
+### Fixed
+- Prevent duplicate workspace observation registrations through the legacy Combine bridge, which could cause long freezes after extended lock-screen inactivity.
+
 ## [0.64.32] - 2026-10-25
 
 ### Fixed
