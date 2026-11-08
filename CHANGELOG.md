@@ -2,6 +2,11 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.34] - 2026-11-08
+
+### Added
+- Render inline and display math in Markdown previews with bundled KaTeX, including dollar and backslash delimiters, offline fonts, and support alongside Mermaid diagrams.
+
 ## [0.64.33] - 2026-11-02
 
 ### Fixed
