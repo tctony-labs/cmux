@@ -129,6 +129,9 @@ body {
 .cmux-math-block {
   display: block;
   overflow-x: auto;
+  overflow-y: hidden;
+  /* KaTeX's positioned glyphs can extend beyond the formula's line box. */
+  padding-block: 0.5em;
   margin: 1em 0;
 }
 .cmux-math .katex-display { margin: 0; }
