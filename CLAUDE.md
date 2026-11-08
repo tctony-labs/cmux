@@ -274,7 +274,7 @@ Notes:
 
 ### `lgtm` 触发规则
 
-在本项目中，用户输入 `lgtm` 即授权提交当前修复并完成发布，无需再次询问是否 commit、打 tag 或推送。按本节执行：提交修复、更新 changelog 和 patch 版本、提交发布变更、完成发布前检查，推送版本 tag 以自动触发 release workflow，等待发布完成并报告结果。用户明确指定版本时覆盖默认 patch。仅讨论或配置 `lgtm` 规则不触发发布。
+在本项目中，用户输入 `lgtm` 即授权提交当前修复并启动新版本发布，无需再次询问是否 commit、打 tag 或推送。按本节执行：提交修复、更新 changelog 和 patch 版本、提交发布变更、完成发布前检查，推送版本 tag 以自动触发 release workflow，确认对应构建任务已启动后即可报告结束。用户明确指定版本时覆盖默认 patch。仅讨论或配置 `lgtm` 规则不触发发布。
 
 发布流程与 `tctony-labs/EmacsCtl` 一致：由 release workflow 调用可复用的构建 workflow，完成 App 构建、签名、公证、DMG 打包、GitHub Release 创建和 Sparkle 更新文件发布。
 
@@ -321,7 +321,7 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-触发后定位该 tag 对应的 workflow run，使用 `gh run watch <run-id> --repo tctony-labs/cmux` 等待完成，并核对对应 tag 的 Release、DMG 和 appcast。不能只推送 tag 就报告发布完成。保留 release workflow 的手动入口用于必要的重试；正常手动发布只推送 tag。
+推送 tag 后定位对应的 workflow run，核对 tag 与提交 SHA，并确认构建 job 已启动，即可报告任务结束并提供版本号、tag 和 workflow 链接。此时报告“发布已启动”，无需等待构建、签名、公证、GitHub Release 创建或资产上传完成，也无需持续监控或核对最终发布产物；只有用户另行要求时才继续跟踪发布结果。保留 release workflow 的手动入口用于必要的重试；正常手动发布只推送 tag。
 
 发布 workflow 会校验 tag 与 App 版本是否一致，然后：
 
