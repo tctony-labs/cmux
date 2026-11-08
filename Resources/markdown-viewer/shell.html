@@ -126,6 +126,13 @@ body {
 .cmux-remote-image-placeholder button:focus-visible {
   background: var(--bgColor-neutral-muted);
 }
+.cmux-math-block {
+  display: block;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.cmux-math .katex-display { margin: 0; }
+.cmux-math-error { white-space: pre-wrap; }
 /* Mermaid + Vega-Lite blocks. Both libs render into these containers
    lazily; the .cmux-source <pre> holds the raw block source for the
    library to read, hidden from view. */
@@ -934,6 +941,85 @@ html { scroll-behavior: smooth; }
     return template.innerHTML;
   }
 
+  // Recognize TeX before Markdown can consume its escapes or underscores.
+  // Fenced/inline code remains owned by marked, so it never reaches these renderers.
+  function mathClosingIndex(source, delimiter, offset) {
+    var index = source.indexOf(delimiter, offset);
+    while (index !== -1) {
+      var slashes = 0;
+      for (var i = index - 1; i >= 0 && source[i] === '\\'; i--) { slashes++; }
+      if (slashes % 2 === 0) { return index; }
+      index = source.indexOf(delimiter, index + delimiter.length);
+    }
+    return -1;
+  }
+
+  function mathToken(source, block) {
+    var opening = block ? source.match(/^ {0,3}(\$\$|\\\[)/) : source.match(/^(\$\$|\\\[|\\\(|\$)/);
+    if (!opening) { return; }
+    var delimiter = opening[1];
+    var closing = delimiter === '\\[' ? '\\]' : delimiter === '\\(' ? '\\)' : delimiter;
+    var offset = opening[0].length;
+    var end = mathClosingIndex(source, closing, offset);
+    if (delimiter === '$') {
+      if (/\s/.test(source[offset] || '') || offset === source.length) { return; }
+      // Do not skip an invalid closing dollar: it may begin the next formula
+      // in prose such as "Cost $5 and $10, formula $x$."
+      if (end !== -1 && (/\s/.test(source[end - 1]) || /\d/.test(source[end + 1] || ''))) {
+        return;
+      }
+      if (end === -1 || source.slice(offset, end).indexOf('\n') !== -1) { return; }
+    }
+    if (end === -1 || !source.slice(offset, end).trim()) { return; }
+    var length = end + closing.length;
+    if (block) {
+      var trailing = source.slice(length).match(/^[ \t]*(?:\n|$)/);
+      if (!trailing) { return; }
+      length += trailing[0].length;
+    }
+    return {
+      type: block ? 'cmuxBlockMath' : 'cmuxInlineMath',
+      raw: source.slice(0, length),
+      text: source.slice(offset, end),
+      display: delimiter === '$$' || delimiter === '\\['
+    };
+  }
+
+  function mathPlaceholder(token) {
+    var tag = token.type === 'cmuxBlockMath' ? 'div' : 'span';
+    var classes = 'cmux-math' + (token.display ? ' cmux-math-block' : '');
+    var sourceLine = token.sourceLine ? ' data-source-line="' + token.sourceLine + '"' : '';
+    return '<' + tag + ' class="' + classes + '"' + sourceLine
+      + ' data-math-source="' + escapeDataAttribute(token.text) + '"'
+      + ' data-math-display="' + (token.display ? '1' : '0') + '">'
+      + escapeHtml(token.raw.trim()) + '</' + tag + '>';
+  }
+
+  marked.use({
+    extensions: [
+      {
+        name: 'cmuxBlockMath',
+        level: 'block',
+        start: function(source) {
+          var match = /^ {0,3}(?:\$\$|\\\[)/m.exec(source);
+          return match ? match.index : undefined;
+        },
+        tokenizer: function(source) { return mathToken(source, true); },
+        renderer: mathPlaceholder
+      },
+      {
+        name: 'cmuxInlineMath',
+        level: 'inline',
+        start: function(source) {
+          var match = /\$|\\[([]/.exec(source);
+          return match ? match.index : undefined;
+        },
+        tokenizer: function(source) { return mathToken(source, false); },
+        renderer: mathPlaceholder
+      }
+    ]
+  });
+
   // Configure marked: GitHub-flavored, with custom renderers for
   // code (syntax-highlighted via highlight.js), headings (with
   // GitHub-style slug ids for anchor links), and local markdown file
@@ -1062,6 +1148,8 @@ html { scroll-behavior: smooth; }
   };
 
   function renderLibError(libName, msg) {
+    // Keep the original TeX readable if the formula library could not be loaded.
+    if (libName === 'katex') { console.warn('KaTeX library unavailable: ' + msg); return; }
     var sel = libName === 'mermaid' ? '.cmux-mermaid' : '.cmux-vega';
     contentEl.querySelectorAll(sel + ':not([data-rendered])').forEach(function(el) {
       el.setAttribute('data-rendered', '1');
@@ -1464,7 +1552,39 @@ html { scroll-behavior: smooth; }
     });
   }
 
+  function renderMathBlocks() {
+    if (!window.katex) { renderLibError('katex', 'library missing'); return; }
+    contentEl.querySelectorAll('.cmux-math:not([data-rendered])').forEach(function(el) {
+      // Never reinterpret code or the contents of a diagram as Markdown math.
+      if (el.closest('pre, code, .cmux-mermaid, .cmux-vega')) { return; }
+      el.setAttribute('data-rendered', '1');
+      var original = el.textContent;
+      try {
+        katex.render(unescapeDataAttribute(el.getAttribute('data-math-source')), el, {
+          displayMode: el.getAttribute('data-math-display') === '1',
+          throwOnError: true,
+          trust: false,
+          strict: 'ignore'
+        });
+      } catch (error) {
+        el.textContent = original;
+        el.classList.add('cmux-math-error');
+        var location = el.closest('[data-source-line]');
+        console.warn('KaTeX formula could not be rendered', {
+          line: location ? location.getAttribute('data-source-line') : null,
+          error: error.name
+        });
+      }
+    });
+  }
+
   function postProcessSpecialBlocks() {
+    contentEl.querySelectorAll('pre .cmux-math, code .cmux-math').forEach(function(el) {
+      el.replaceWith(document.createTextNode(el.textContent));
+    });
+    if (contentEl.querySelector('.cmux-math:not([data-rendered])')) {
+      loadLib('katex', renderMathBlocks);
+    }
     if (contentEl.querySelector('.cmux-mermaid:not([data-rendered])')) {
       loadLib('mermaid', renderMermaidBlocks);
     }
@@ -1763,6 +1883,10 @@ html { scroll-behavior: smooth; }
     }
     clone.querySelectorAll('.cmux-mermaid svg[data-cmux-mermaid-original-max-width]').forEach(function(el) {
       mermaidRestoreOriginalSizing(el);
+    });
+    clone.querySelectorAll('.cmux-math').forEach(function(el) {
+      el.removeAttribute('data-math-source');
+      el.removeAttribute('data-math-display');
     });
     clone.querySelectorAll('*').forEach(function(el) {
       Array.prototype.slice.call(el.attributes || []).forEach(function(attr) {

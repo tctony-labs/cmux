@@ -163,6 +163,17 @@ viewer has no runtime CDN dependency.
 - **Copyright:** Copyright (c) 2014-2024 Knut Sveidqvist and Mermaid contributors
 - **Source:** https://github.com/mermaid-js/mermaid/releases/tag/mermaid%4011.4.1
 
+### KaTeX
+
+- **Version / 版本:** 0.19.1
+- **License / 许可证:** MIT License (full text / 完整文本: `Resources/markdown-viewer/katex-LICENSE.txt`)
+- **Copyright / 版权:** Copyright (c) 2013-2020 Khan Academy and other contributors
+- **Source / 来源:** https://www.npmjs.com/package/katex/v/0.19.1
+
+The bundled stylesheet embeds the distribution's WOFF2 fonts as data URLs for offline rendering.
+
+随 App 打包的样式表以 data URL 嵌入发行包中的 WOFF2 字体，支持离线渲染。
+
 ### Vega
 
 - **Version:** 5.30.0

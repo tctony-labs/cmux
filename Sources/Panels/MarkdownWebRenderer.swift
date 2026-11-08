@@ -61,7 +61,7 @@ struct MarkdownWebRenderer: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.suppressesIncrementalRendering = false
         // Bridge: JS posts to `cmuxLib` to request lazy-loaded libraries
-        // (mermaid / vega-lite). Swift fetches the bundled source from the
+        // (mermaid / vega-lite / katex). Swift fetches the bundled source from the
         // app bundle and injects it via evaluateJavaScript.
         config.userContentController.add(WeakMarkdownScriptMessageHandler(context.coordinator), name: "cmuxLib")
         config.setURLSchemeHandler(
@@ -695,6 +695,20 @@ struct MarkdownWebRenderer: NSViewRepresentable {
             let assets = MarkdownViewerAssets.shared
             let sources: [String]
             switch lib {
+            case "katex":
+                let css = assets.lazyAsset(name: "katex.min", ext: "css")
+                let cssLiteral = (try? JSONSerialization.data(withJSONObject: [css]))
+                    .flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
+                sources = [
+                    assets.lazyAsset(name: "katex.min", ext: "js"),
+                    """
+                    (function() {
+                      var style = document.createElement('style');
+                      style.textContent = \(cssLiteral)[0];
+                      document.head.appendChild(style);
+                    })();
+                    """
+                ]
             case "mermaid":
                 sources = [assets.lazyAsset(name: "mermaid.min", ext: "js")]
             case "vega-lite":
