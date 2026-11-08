@@ -2,6 +2,13 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.35] - 2026-11-09
+
+### Changed
+- docs: finish release workflow after build starts
+- test: reproduce vertical scrolling in Markdown math blocks
+- fix: prevent vertical scrolling and clipping in Markdown math
+
 ## [0.64.34] - 2026-11-08
 
 ### Added
