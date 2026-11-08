@@ -292,6 +292,71 @@ struct MarkdownMathTests {
         #expect(fontsLoaded == true)
     }
 
+    @Test(arguments: [12.0, 15.0, 17.5, 24.0, 32.0])
+    func displayMathFitsVerticallyAndPreservesHorizontalScrolling(
+        pointSize: Double
+    ) async throws {
+        let renderer = MarkdownMathTestRenderer()
+        defer { renderer.close() }
+        let wideFormula = Array(repeating: "x_i", count: 60).joined(separator: " + ")
+        let trailingProse = String(repeating: "\n\nMore text below the formulas.", count: 30)
+        let markdown = #"""
+        RMSNorm:
+
+        $$
+        \hat{x}_i = \frac{x_i}
+        {\sqrt{\frac{1}{D}\sum_{j=1}^{D}x_j^2 + \epsilon}}
+        $$
+
+        $$
+        y_i = \gamma_i\hat{x}_i
+        $$
+
+        """# + "\n$$\n\(wideFormula)\n$$\n" + trailingProse
+        try await renderer.load(markdown)
+        renderer.coordinator.setFontSize(pointSize)
+
+        let result = try await renderer.webView.callAsyncJavaScript(
+            """
+            await document.fonts.ready;
+            var blocks = Array.from(document.querySelectorAll('.cmux-math-block')).map(el => {
+              el.scrollTop = 10000;
+              el.scrollLeft = 10000;
+              var rect = el.getBoundingClientRect();
+              var formula = el.querySelector('.katex-html').getBoundingClientRect();
+              var snapshot = {
+                clientHeight: el.clientHeight,
+                scrollHeight: el.scrollHeight,
+                scrollTop: el.scrollTop,
+                scrollLeft: el.scrollLeft,
+                topInset: formula.top - rect.top,
+                bottomInset: rect.bottom - formula.bottom
+              };
+              el.scrollTop = 0;
+              el.scrollLeft = 0;
+              return snapshot;
+            });
+            document.documentElement.style.scrollBehavior = 'auto';
+            document.scrollingElement.scrollTop = 10000;
+            return { blocks, pageScrollTop: document.scrollingElement.scrollTop };
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+        let snapshot = try #require(result as? [String: Any])
+        let blocks = try #require(snapshot["blocks"] as? [[String: Double]])
+        #expect(blocks.count == 3)
+        for block in blocks {
+            #expect(try #require(block["scrollHeight"]) <= #require(block["clientHeight"]))
+            #expect(block["scrollTop"] == 0)
+            #expect(try #require(block["topInset"]) >= 0)
+            #expect(try #require(block["bottomInset"]) >= 0)
+        }
+        #expect(try #require(blocks.last?["scrollLeft"]) > 0)
+        #expect(try #require(snapshot["pageScrollTop"] as? Double) > 0)
+    }
+
     @Test
     func rmsnormBlocksAndMarkdownStructureRender() async throws {
         let renderer = MarkdownMathTestRenderer()
