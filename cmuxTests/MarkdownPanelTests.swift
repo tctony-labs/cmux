@@ -1,4 +1,5 @@
 import AppKit
+import Bonsplit
 import Combine
 import SwiftUI
 import Testing
@@ -1599,6 +1600,116 @@ private final class MarkdownRemoteImageHoldingSchemeHandler: NSObject, WKURLSche
 @MainActor
 @Suite(.serialized)
 struct MarkdownRendererHostingTests {
+    @Test
+    func previewStaysAttachedAfterSplitZoomRoundTrip() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-markdown-round-trip-\(UUID()).md")
+        try "# Zoom round trip\n\nThe preview must remain attached.".write(
+            to: fileURL, atomically: true, encoding: .utf8
+        )
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let sourcePanel = try #require(workspace.focusedPanelId)
+        let firstPreview = try #require(workspace.newMarkdownSplit(
+            from: sourcePanel, orientation: .horizontal, filePath: fileURL.path
+        ))
+        let rightPane = try #require(workspace.paneId(forPanelId: firstPreview.id))
+        let preview = try #require(workspace.newMarkdownSurface(
+            inPane: rightPane, filePath: fileURL.path, focus: true
+        ))
+        let controller = workspace.bonsplitController
+        let previewTab = try #require(workspace.surfaceIdFromPanelId(preview.id))
+        let frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        let window = NSWindow(
+            contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: WorkspaceContentView(
+            workspace: workspace,
+            isWorkspaceVisible: true,
+            isWorkspaceInputActive: true,
+            isFullScreen: false,
+            workspacePortalPriority: 0,
+            onThemeRefreshRequest: nil
+        ).environmentObject(TerminalNotificationStore.shared))
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer {
+            window.close()
+        }
+
+        for _ in 0..<10 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let webView = try #require(preview.rendererSession.coordinator(
+            panelId: preview.id, workspaceId: workspace.id, filePath: fileURL.path
+        ).webView)
+        #expect(webView.isDescendant(of: host))
+        #expect(webView.visibleRect.width > 0)
+
+        for _ in 0..<3 {
+            for zoomed in [true, false] {
+                #expect(controller.requestTabZoomToggle(for: previewTab, inPane: rightPane))
+                for _ in 0..<10 {
+                    host.layoutSubtreeIfNeeded()
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                #expect((controller.zoomedPaneId != nil) == zoomed)
+                #expect(webView.isDescendant(of: host))
+                #expect(webView.window === window)
+                #expect(webView.visibleRect.width > 0)
+                #expect(webView.visibleRect.height > 0)
+            }
+        }
+    }
+
+    @Test
+    func offWindowMeasurementCannotStealVisiblePreview() throws {
+        let session = MarkdownRendererSession()
+        let renderer = MarkdownWebRenderer(
+            markdown: "# Visible preview\n",
+            theme: MarkdownWebTheme.resolve(backgroundColor: .windowBackgroundColor),
+            backgroundColor: .windowBackgroundColor,
+            panelId: UUID(),
+            workspaceId: UUID(),
+            filePath: "/tmp/cmux-markdown-measurement.md",
+            fontSize: 18,
+            fontFamily: MarkdownFontFamily.systemDefault,
+            maxContentWidth: MarkdownMaxWidthSettings.defaultCSSPixels,
+            session: session,
+            onRequestPanelFocus: {}
+        )
+        let frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let window = NSWindow(
+            contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        let visibleHost = NSHostingView(rootView: AnyView(renderer))
+        window.contentView = visibleHost
+        visibleHost.layoutSubtreeIfNeeded()
+        defer {
+            session.close()
+            window.close()
+        }
+        let webView = try #require(renderer.makeCoordinator().webView)
+        #expect(webView.isDescendant(of: visibleHost))
+
+        // After unzoom, SwiftUI can measure another copy without mounting it in a window.
+        let measurementHost = NSHostingView(rootView: AnyView(renderer))
+        measurementHost.frame = frame
+        measurementHost.layoutSubtreeIfNeeded()
+        #expect(measurementHost.window == nil)
+        #expect(webView.isDescendant(of: visibleHost))
+        #expect(webView.window === window)
+
+        measurementHost.rootView = AnyView(EmptyView())
+        measurementHost.layoutSubtreeIfNeeded()
+        #expect(webView.isDescendant(of: visibleHost))
+        #expect(webView.visibleRect.size == frame.size)
+    }
+
     @Test
     func dismantlingOnlyDetachesTheCurrentHostsChild() {
         let coordinator = MarkdownWebRenderer.Coordinator()
