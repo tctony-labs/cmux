@@ -18,6 +18,30 @@ final class WeakMarkdownScriptMessageHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
+/// A representable can also be instantiated just to measure a SwiftUI layout.
+/// Claim the session's web view only when this host actually enters a window.
+@MainActor
+final class MarkdownWebHostView: NSView {
+    weak var webView: MarkdownWebView?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, let webView else { return }
+
+        if webView.superview !== self {
+#if DEBUG
+            if webView.superview != nil {
+                cmuxDebugLog("markdown.host.transfer webView=\(ObjectIdentifier(webView))")
+            }
+#endif
+            webView.removeFromSuperview()
+            addSubview(webView)
+        }
+        webView.frame = bounds
+        webView.autoresizingMask = [.width, .height]
+    }
+}
+
 @MainActor
 final class MarkdownWebView: WKWebView {
     var onPointerDown: (() -> Void)?

@@ -31,22 +31,14 @@ struct MarkdownWebRenderer: NSViewRepresentable {
         // SwiftUI owns this container, never the session-owned web view. During
         // zoom/drop transitions the retiring representable can still receive
         // layout updates after the replacement has mounted the same web view.
-        let container = NSView(frame: .zero)
-        let webView = makeWebView(context: context)
-        webView.frame = container.bounds
-        webView.autoresizingMask = [.width, .height]
-        container.addSubview(webView)
+        let container = MarkdownWebHostView(frame: .zero)
+        container.webView = makeWebView(context: context)
+        context.coordinator.update(markdown: markdown, theme: theme)
         return container
     }
 
     private func makeWebView(context: Context) -> MarkdownWebView {
         if let webView = context.coordinator.webView {
-            if webView.superview != nil {
-#if DEBUG
-                cmuxDebugLog("markdown.host.transfer panel=\(panelId)")
-#endif
-                webView.removeFromSuperview()
-            }
             webView.onPointerDown = onRequestPanelFocus
             webView.navigationDelegate = context.coordinator
             webView.uiDelegate = context.coordinator
@@ -115,6 +107,7 @@ struct MarkdownWebRenderer: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ container: NSView, coordinator: Coordinator) {
+        (container as? MarkdownWebHostView)?.webView = nil
         // Only detach our own child. A replacement host may already own it,
         // and the panel session keeps its delegates and document alive.
         guard let webView = coordinator.webView,
