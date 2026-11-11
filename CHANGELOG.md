@@ -2,6 +2,12 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.36] - 2026-11-11
+
+### Changed
+- test: reproduce Markdown preview loss during off-window measurement
+- fix: attach Markdown previews only to window-mounted hosts
+
 ## [0.64.35] - 2026-11-09
 
 ### Changed
