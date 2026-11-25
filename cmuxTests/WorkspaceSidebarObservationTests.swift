@@ -1,4 +1,5 @@
 import Foundation
+import Testing
 import XCTest
 
 import CmuxSidebar
@@ -69,5 +70,44 @@ final class WorkspaceSidebarObservationTests: XCTestCase {
             0,
             "Expected non-visible remote heartbeat updates to avoid invalidating sidebar rows"
         )
+    }
+}
+
+@MainActor
+struct TerminalCodexSidebarStatusTests {
+    @Test func runningPaneKeepsWorkspaceRunningUntilItFinishes() throws {
+        let workspace = Workspace()
+        let runningPanelId = try #require(workspace.focusedPanelId)
+        let blockedPanel = try #require(
+            workspace.newTerminalSplit(from: runningPanelId, orientation: .horizontal)
+        )
+        var observedUpdates = 0
+        let subscription = workspace.sidebarObservationPublisher.sink { observedUpdates += 1 }
+        defer { subscription.cancel() }
+        let initialUpdates = observedUpdates
+
+        workspace.updateTerminalCodexStatus(panelId: runningPanelId, status: .running)
+        workspace.updateTerminalCodexStatus(panelId: blockedPanel.id, status: .needsInput)
+        #expect(workspace.sidebarStatusEntriesInDisplayOrder().map(\.icon) == ["bolt.fill"])
+        #expect(observedUpdates > initialUpdates)
+
+        workspace.updateTerminalCodexStatus(panelId: runningPanelId, status: .idle)
+        #expect(workspace.sidebarStatusEntriesInDisplayOrder().map(\.icon) == ["bell.fill"])
+
+        workspace.updateTerminalCodexStatus(panelId: blockedPanel.id, status: nil)
+        #expect(workspace.sidebarStatusEntriesInDisplayOrder().isEmpty)
+    }
+
+    @Test func lateHookStatusDoesNotOverrideTerminalState() throws {
+        let workspace = Workspace()
+        let panelId = try #require(workspace.focusedPanelId)
+        workspace.recordAgentPID(key: "codex.session", pid: getpid(), panelId: panelId)
+        workspace.updateTerminalCodexStatus(panelId: panelId, status: .idle)
+        workspace.statusEntries["codex"] = SidebarStatusEntry(key: "codex", value: "late hook")
+
+        #expect(workspace.sidebarStatusEntriesInDisplayOrder().isEmpty)
+
+        workspace.updateTerminalCodexStatus(panelId: panelId, status: .running)
+        #expect(workspace.sidebarStatusEntriesInDisplayOrder().map(\.icon) == ["bolt.fill"])
     }
 }

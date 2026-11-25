@@ -6,12 +6,19 @@ import Foundation
 import CmuxSidebar
 
 extension Workspace {
+    enum TerminalCodexStatus: String, Sendable {
+        case idle
+        case running
+        case needsInput
+    }
+
     private static let structuredAgentHookStatusKeys = AgentHibernationLifecycleStatusKeys.allowedStatusKeys
     private static let managedSubagentEnvironmentKey = "CMUX_AGENT_MANAGED_SUBAGENT"
     private static let truthyStartupEnvironmentValues: Set<String> = ["1", "true", "yes", "on", "enabled"]
 
     func agentRuntimeState(forPanelId panelId: UUID) -> DetachedAgentRuntimeState? {
         let pidKeys = agentPIDKeysByPanelId[panelId] ?? []
+        let terminalCodexStatus = terminalCodexStatusesByPanelId[panelId]
 
         var agentPIDsForPanel: [String: pid_t] = [:]
         var statusEntriesForPanel: [String: SidebarStatusEntry] = [:]
@@ -24,12 +31,13 @@ extension Workspace {
                 statusEntriesForPanel[statusKey] = statusEntry
             }
         }
-        guard !statusEntriesForPanel.isEmpty || !agentPIDsForPanel.isEmpty || !pidKeys.isEmpty else { return nil }
+        guard !pidKeys.isEmpty || terminalCodexStatus != nil else { return nil }
         return DetachedAgentRuntimeState(
             panelId: panelId,
             statusEntries: statusEntriesForPanel,
             agentPIDs: agentPIDsForPanel,
-            agentPIDKeys: pidKeys
+            agentPIDKeys: pidKeys,
+            terminalCodexStatus: terminalCodexStatus
         )
     }
 
@@ -150,11 +158,46 @@ extension Workspace {
         return Self.truthyStartupEnvironmentValues.contains(rawValue)
     }
 
+    func updateTerminalCodexStatus(panelId: UUID, status: TerminalCodexStatus?) {
+        guard terminalPanel(for: panelId) != nil,
+              terminalCodexStatusesByPanelId[panelId] != status else { return }
+        terminalCodexStatusesByPanelId[panelId] = status
+#if DEBUG
+        cmuxDebugLog(
+            "surface.codexStatus workspace=\(id.uuidString.prefix(5)) " +
+            "panel=\(panelId.uuidString.prefix(5)) status=\(status?.rawValue ?? "clear")"
+        )
+#endif
+    }
+
     func sidebarStatusEntriesVisibleForDisplay() -> [SidebarStatusEntry] {
         let visibleStructuredStatusKeys = visibleStructuredAgentStatusKeysByPanel()
-        return statusEntries.values.filter { entry in
+        var entries = statusEntries.values.filter { entry in
             shouldDisplaySidebarStatusEntry(entry, visibleStructuredStatusKeys: visibleStructuredStatusKeys)
         }
+        if let terminalStatus = terminalCodexSidebarStatus() {
+            entries.removeAll { $0.key == terminalStatus.key }
+            entries.append(terminalStatus)
+        }
+        return entries
+    }
+
+    private func terminalCodexSidebarStatus() -> SidebarStatusEntry? {
+        let statuses = terminalCodexStatusesByPanelId.values
+        let value: String
+        let icon: String
+        if statuses.contains(.running) {
+            value = String(localized: "agent.generic.status.running", defaultValue: "Running")
+            icon = "bolt.fill"
+        } else if statuses.contains(.needsInput) {
+            value = String(localized: "feed.status.needsInput", defaultValue: "Needs input")
+            icon = "bell.fill"
+        } else {
+            return nil
+        }
+        return SidebarStatusEntry(
+            key: "codex", value: value, icon: icon, color: "#4C8DFF", timestamp: .distantPast
+        )
     }
 
     private func shouldDisplaySidebarStatusEntry(
@@ -173,6 +216,7 @@ extension Workspace {
         where panels[panelId] != nil {
             let statusKey = agentStatusKey(forAgentPIDKey: key)
             guard Self.structuredAgentHookStatusKeys.contains(statusKey),
+                  statusKey != "codex" || terminalCodexStatusesByPanelId[panelId] == nil,
                   statusEntries[statusKey] != nil else {
                 continue
             }
@@ -191,6 +235,7 @@ extension Workspace {
         for key in agentPIDs.keys where agentPIDPanelIdsByKey[key] == nil {
             let statusKey = agentStatusKey(forAgentPIDKey: key)
             guard Self.structuredAgentHookStatusKeys.contains(statusKey),
+                  statusKey != "codex" || terminalCodexStatusesByPanelId.isEmpty,
                   statusEntries[statusKey] != nil else {
                 continue
             }
@@ -279,6 +324,10 @@ extension Workspace {
 
     func adoptDetachedAgentRuntimeState(_ runtimeState: DetachedAgentRuntimeState?) {
         guard let runtimeState else { return }
+        updateTerminalCodexStatus(
+            panelId: runtimeState.panelId,
+            status: runtimeState.terminalCodexStatus
+        )
         for (statusKey, statusEntry) in runtimeState.statusEntries {
             statusEntries[statusKey] = statusEntry
         }
@@ -345,6 +394,7 @@ extension Workspace {
         manualUnreadPanelIds.remove(panelId)
         manualUnreadMarkedAt.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
+        terminalCodexStatusesByPanelId.removeValue(forKey: panelId)
         clearAgentLifecycleStates(panelId: panelId)
         surfaceTTYNames.removeValue(forKey: panelId)
         discardRemotePTYSessionID(panelId: panelId)

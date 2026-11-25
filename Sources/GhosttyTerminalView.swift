@@ -3289,6 +3289,32 @@ class GhosttyApp {
                 )
             }
             return true
+        case GHOSTTY_ACTION_CODEX_PROGRAM_STATUS, GHOSTTY_ACTION_COMMAND_FINISHED:
+            let programStatus = action.tag == GHOSTTY_ACTION_COMMAND_FINISHED
+                ? GHOSTTY_CODEX_PROGRAM_STATUS_CLEAR : action.action.codex_program_status
+            let status: Workspace.TerminalCodexStatus?
+            switch programStatus {
+            case GHOSTTY_CODEX_PROGRAM_STATUS_WORKING:
+                status = .running
+            case GHOSTTY_CODEX_PROGRAM_STATUS_BLOCKED:
+                status = .needsInput
+            case GHOSTTY_CODEX_PROGRAM_STATUS_IDLE,
+                 GHOSTTY_CODEX_PROGRAM_STATUS_DONE,
+                 GHOSTTY_CODEX_PROGRAM_STATUS_ERROR:
+                status = .idle
+            case GHOSTTY_CODEX_PROGRAM_STATUS_CLEAR:
+                status = nil
+            default:
+                return false
+            }
+            performOnMain {
+                guard let tabId = surfaceView.tabId,
+                      let panelId = surfaceView.terminalSurface?.id,
+                      let manager = AppDelegate.shared?.tabManagerFor(tabId: tabId),
+                      let workspace = manager.tabs.first(where: { $0.id == tabId }) else { return }
+                workspace.updateTerminalCodexStatus(panelId: panelId, status: status)
+            }
+            return true
         case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
             guard let tabId = surfaceView.tabId else { return true }
             let surfaceId = surfaceView.terminalSurface?.id

@@ -37,10 +37,10 @@ Existing `manaflow-ai/ghostty` release and checksum references below are histori
 
 ## Current fork changes
 
-Current cmux pinned fork head: `41646f195` on the permanent `cmux` branch.
-This adds the arm64 GhosttyKit release workflow and disables inherited workflow push triggers
-without changing terminal source. Preserve
-`.github/workflows/ghosttykit-tctony.yml` when merging upstream workflow changes.
+Current cmux pinned fork head: `ac1f42cd6` on the permanent `cmux` branch.
+Preserve the `OSC 7501` parser and `GHOSTTY_ACTION_CODEX_PROGRAM_STATUS` when merging upstream terminal changes. The action reports Codex TUI status on the emitting surface, including when the TUI uses a shared app-server daemon.
+
+The prior head `41646f195` adds the arm64 GhosttyKit release workflow and disables inherited workflow push triggers. Preserve `.github/workflows/ghosttykit-tctony.yml` when merging upstream workflow changes.
 
 The previous head `e7ece31b5` adds behavioral coverage in `be5f0b4f2` and fixes prompt-only row clicks in
 `e7ece31b5`. A click on a hard-broken prompt row now produces no cursor movement,

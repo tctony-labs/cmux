@@ -27,6 +27,7 @@ private struct SidebarObservationState: Equatable {
     let panels: SidebarPanelObservationState
     let panelDirectories: [UUID: String]
     let statusEntries: [String: SidebarStatusEntry]
+    let terminalCodexStatuses: [UUID: Workspace.TerminalCodexStatus]
     let metadataBlocks: [String: SidebarMetadataBlock]
     let logEntries: [SidebarLogEntry]
     let progress: SidebarProgressState?
@@ -81,7 +82,7 @@ extension Workspace {
             $panelDirectories
         )
         let metadataFields = Publishers.CombineLatest4(
-            $statusEntries,
+            $statusEntries.combineLatest($terminalCodexStatusesByPanelId),
             $metadataBlocks,
             $logEntries,
             $progress
@@ -116,7 +117,8 @@ extension Workspace {
                     extensionSidebarProjectRootPath: workspaceFields.1,
                     panels: workspaceFields.2,
                     panelDirectories: workspaceFields.3,
-                    statusEntries: metadataFields.0,
+                    statusEntries: metadataFields.0.0,
+                    terminalCodexStatuses: metadataFields.0.1,
                     metadataBlocks: metadataFields.1,
                     logEntries: metadataFields.2,
                     progress: metadataFields.3,
