@@ -2,6 +2,11 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.37] - 2026-11-26
+
+### Fixed
+- Keep Codex activity indicators in the sidebar in sync when sessions share a Codex daemon.
+
 ## [0.64.36] - 2026-11-11
 
 ### Changed
