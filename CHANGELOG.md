@@ -2,6 +2,14 @@
 
 All notable changes to cmux are documented here.
 
+## [0.64.38] - 2026-11-27
+
+### Added
+- Show Claude Code activity in the sidebar and send completion, error, and input notifications through OSC 7501, including when hooks are disabled.
+
+### Fixed
+- Reduce typing lag by deferring terminal layout flushes and coalescing split geometry updates.
+
 ## [0.64.37] - 2026-11-26
 
 ### Fixed
