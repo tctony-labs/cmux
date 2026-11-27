@@ -2618,6 +2618,7 @@ final class Workspace: Identifiable, ObservableObject {
         Set(restoredUnreadPanelIndicators.keys)
     }
     @Published private(set) var tmuxLayoutSnapshot: LayoutSnapshot?
+    private var pendingSplitLayoutSnapshot: LayoutSnapshot?
     @Published private(set) var tmuxWorkspaceFlashPanelId: UUID?
     @Published private(set) var tmuxWorkspaceFlashReason: WorkspaceAttentionFlashReason?
     @Published private(set) var tmuxWorkspaceFlashToken: UInt64 = 0
@@ -11945,7 +11946,31 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didChangeGeometry snapshot: LayoutSnapshot) {
-        tmuxLayoutSnapshot = snapshot
+        // Bonsplit can report geometry from inside SwiftUI/AppKit layout.
+        // Publish the latest snapshot and pane order after that pass returns.
+        let needsPublish = pendingSplitLayoutSnapshot == nil
+        pendingSplitLayoutSnapshot = snapshot
+        if needsPublish {
+            DispatchQueue.main.async { [weak self] in
+                self?.publishPendingSplitLayout()
+            }
+        }
+        scheduleTerminalGeometryReconcile()
+        if !isDetachingCloseTransaction {
+            scheduleFocusReconcile()
+        }
+    }
+
+    private func publishPendingSplitLayout() {
+        guard let snapshot = pendingSplitLayoutSnapshot else { return }
+        pendingSplitLayoutSnapshot = nil
+        // The snapshot timestamp changes even when the geometry hasn't moved.
+        if tmuxLayoutSnapshot?.containerFrame != snapshot.containerFrame ||
+            tmuxLayoutSnapshot?.panes != snapshot.panes ||
+            tmuxLayoutSnapshot?.focusedPaneId != snapshot.focusedPaneId {
+            tmuxLayoutSnapshot = snapshot
+        }
+
         // Every order/membership mutation (same-pane reorder, cross-pane move,
         // split, close) routes through here. A pure reorder mutates only
         // bonsplit's internal state, which is not `@Published`, so observers
@@ -11956,10 +11981,6 @@ extension Workspace: BonsplitDelegate {
         if currentOrder != lastOrderedPanelIds {
             lastOrderedPanelIds = currentOrder
             paneLayoutVersion &+= 1
-        }
-        scheduleTerminalGeometryReconcile()
-        if !isDetachingCloseTransaction {
-            scheduleFocusReconcile()
         }
     }
 

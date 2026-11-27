@@ -8666,15 +8666,15 @@ final class GhosttySurfaceScrollView: NSView {
     /// Used after split topology mutations (close/split) to prevent a stale one-frame
     /// IOSurface size from being presented after pane expansion.
     @discardableResult
-    func reconcileGeometryNow() -> Bool {
+    func reconcileGeometryNow(flushScrollLayout: Bool = true) -> Bool {
         guard Thread.isMainThread else {
             DispatchQueue.main.async { [weak self] in
-                self?.reconcileGeometryNow()
+                self?.reconcileGeometryNow(flushScrollLayout: flushScrollLayout)
             }
             return false
         }
 
-        return synchronizeGeometryAndContent()
+        return synchronizeGeometryAndContent(flushScrollLayout: flushScrollLayout)
     }
 
     /// Request an immediate terminal redraw after geometry updates so stale IOSurface
@@ -8691,7 +8691,7 @@ final class GhosttySurfaceScrollView: NSView {
     }
 
     @discardableResult
-    private func synchronizeGeometryAndContent() -> Bool {
+    private func synchronizeGeometryAndContent(flushScrollLayout: Bool = true) -> Bool {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -8744,10 +8744,12 @@ final class GhosttySurfaceScrollView: NSView {
         bringPaneDropTargetToFrontIfNeeded()
         // NSScrollView can defer clip-view/content-size updates until its own layout pass,
         // which makes interactive width changes arrive a queue turn late on Sequoia.
-        if didScrollbarAppearanceChange {
-            scrollView.tile()
+        if flushScrollLayout {
+            if didScrollbarAppearanceChange {
+                scrollView.tile()
+            }
+            scrollView.layoutSubtreeIfNeeded()
         }
-        scrollView.layoutSubtreeIfNeeded()
         updateNotificationRingPath()
         updateFlashPath(style: lastFlashStyle)
         updateFlashAppearance(style: lastFlashStyle)
@@ -8945,11 +8947,9 @@ final class GhosttySurfaceScrollView: NSView {
     }
 
     func attachSurface(_ terminalSurface: TerminalSurface) {
+        // SwiftUI calls this during updateNSView. The portal and the native layout
+        // pass reconcile geometry when the host acquires or changes its size.
         surfaceView.attachSurface(terminalSurface)
-        // Preserve the bootstrap 800x600 surface until portal reattach churn
-        // has produced a real host size instead of a transient 1x1 placeholder.
-        guard bounds.width > 1, bounds.height > 1 else { return }
-        _ = synchronizeGeometryAndContent()
     }
 
     func setFocusHandler(_ handler: (() -> Void)?) {

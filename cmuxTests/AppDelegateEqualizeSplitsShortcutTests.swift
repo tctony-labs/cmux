@@ -108,11 +108,8 @@ final class AppDelegateEqualizeSplitsShortcutTests: XCTestCase {
             XCTAssertNotEqual(split.dividerPosition, 0.5, accuracy: 0.000_1)
         }
 
-        workspace.splitTabBar(workspace.bonsplitController, didChangeGeometry: workspace.bonsplitController.layoutSnapshot())
-        guard let seededLayoutSnapshot = workspace.tmuxLayoutSnapshot else {
-            XCTFail("Expected cached layout snapshot after seeding split geometry")
-            return
-        }
+        let seededLayoutSnapshot = workspace.bonsplitController.layoutSnapshot()
+        workspace.didProgrammaticallyChangeSplitGeometry()
         let expectedEqualizedPositions = shortcutRoutingExpectedEqualizedDividerPositions(
             in: workspace.bonsplitController.treeSnapshot()
         )

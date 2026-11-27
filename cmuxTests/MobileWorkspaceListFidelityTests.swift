@@ -96,11 +96,14 @@ struct MobileWorkspaceListFidelityTests {
         #expect(ordered == expected)
     }
 
-    @Test func reorderingTerminalsChangesObserverHashAndBumpsLayoutVersion() throws {
+    @Test func reorderingTerminalsChangesObserverHashAndBumpsLayoutVersion() async throws {
         // Tabs in one pane so a within-pane reorder genuinely changes their order.
         let (workspace, ordered) = try makeWorkspaceWithTabTerminals(count: 3)
         #expect(ordered.count == 3)
 
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
         let versionBefore = workspace.paneLayoutVersion
         let before = MobileWorkspaceListObserver.summaryHashForTesting(
             tabs: [workspace],
@@ -118,6 +121,9 @@ struct MobileWorkspaceListFidelityTests {
 
         // The reorder must wake the observer (bonsplit selection state is not
         // @Published, so paneLayoutVersion is the only signal).
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
         #expect(
             workspace.paneLayoutVersion > versionBefore,
             "a pure reorder must bump paneLayoutVersion so the observer re-evaluates"

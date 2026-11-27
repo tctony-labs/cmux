@@ -662,6 +662,7 @@ final class WindowTerminalPortal: NSObject {
     private weak var installedReferenceView: NSView?
     private var installConstraints: [NSLayoutConstraint] = []
     private var hasDeferredFullSyncScheduled = false
+    private var deferredSurfaceRefreshes: Set<ObjectIdentifier> = []
     private var hasExternalGeometrySyncScheduled = false
     private var pendingExternalGeometrySyncRequiresImmediate = false
     private var externalGeometrySyncGeneration: UInt64 = 0
@@ -1114,6 +1115,7 @@ final class WindowTerminalPortal: NSObject {
 
     func detachHostedView(withId hostedId: ObjectIdentifier) {
         guard let entry = entriesByHostedId.removeValue(forKey: hostedId) else { return }
+        deferredSurfaceRefreshes.remove(hostedId)
         if let anchor = entry.anchorView {
             hostedByAnchorId.removeValue(forKey: ObjectIdentifier(anchor))
         }
@@ -1243,7 +1245,12 @@ final class WindowTerminalPortal: NSObject {
         }
         // Keep inner scroll/surface geometry in sync with the seeded outer frame
         // before the hosted view enters a window.
-        hostedView.reconcileGeometryNow()
+        let didResize = hostedView.reconcileGeometryNow(
+            flushScrollLayout: !deferLayoutSynchronization
+        )
+        if deferLayoutSynchronization && didResize {
+            deferredSurfaceRefreshes.insert(hostedId)
+        }
 
         if hostedView.superview !== hostView {
 #if DEBUG
@@ -1309,7 +1316,9 @@ final class WindowTerminalPortal: NSObject {
         // geometry callback while another fires. Reconcile all mapped hosted views so no stale
         // frame remains "stuck" onscreen until the next interaction.
         synchronizeAllHostedViews(excluding: primaryHostedId, syncLayout: syncLayout)
-        reconcileVisibleHostedViewsAfterGeometrySync(reason: "portal.anchorGeometrySync")
+        if syncLayout {
+            reconcileVisibleHostedViewsAfterGeometrySync(reason: "portal.anchorGeometrySync")
+        }
         scheduleDeferredFullSynchronizeAll()
     }
 
@@ -1332,6 +1341,31 @@ final class WindowTerminalPortal: NSObject {
             guard let self else { return }
             self.hasDeferredFullSyncScheduled = false
             self.synchronizeAllHostedViews(excluding: nil)
+            let refreshes = self.deferredSurfaceRefreshes
+            self.deferredSurfaceRefreshes.removeAll()
+            for hostedId in refreshes {
+                guard let view = self.entriesByHostedId[hostedId]?.hostedView,
+                      !view.isHidden, view.window != nil else { continue }
+                view.reconcileGeometryNow()
+                view.refreshSurfaceNow(reason: "portal.deferredGeometry")
+            }
+        }
+    }
+
+    private func reconcileAndRefresh(
+        _ hostedView: GhosttySurfaceScrollView,
+        syncLayout: Bool,
+        reason: String
+    ) {
+        hostedView.reconcileGeometryNow(flushScrollLayout: syncLayout)
+        let hostedId = ObjectIdentifier(hostedView)
+        if syncLayout {
+            deferredSurfaceRefreshes.remove(hostedId)
+            hostedView.refreshSurfaceNow(reason: reason)
+        } else {
+            // Keep the terminal grid in step with the anchor, but let the queued
+            // portal pass flush AppKit layout and display after SwiftUI returns.
+            deferredSurfaceRefreshes.insert(hostedId)
         }
     }
 
@@ -1640,8 +1674,9 @@ final class WindowTerminalPortal: NSObject {
             }
             CATransaction.commit()
             if geometryChanged {
-                hostedView.reconcileGeometryNow()
-                hostedView.refreshSurfaceNow(reason: "portal.frameChange")
+                reconcileAndRefresh(
+                    hostedView, syncLayout: syncLayout, reason: "portal.frameChange"
+                )
             }
         }
 
@@ -1670,8 +1705,7 @@ final class WindowTerminalPortal: NSObject {
             // A reveal can happen without any frame delta (same targetFrame), which means the
             // normal frame-change refresh path won't run. Nudge geometry + redraw so newly
             // revealed terminals don't sit on a stale/blank IOSurface until later focus churn.
-            hostedView.reconcileGeometryNow()
-            hostedView.refreshSurfaceNow(reason: "portal.reveal")
+            reconcileAndRefresh(hostedView, syncLayout: syncLayout, reason: "portal.reveal")
         }
 
         if transientRecoveryReason == nil {
