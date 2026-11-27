@@ -3006,6 +3006,72 @@ class GhosttyApp {
         return initializingRuntimeApp
     }
 
+    private func handleTerminalProgramStatus(
+        _ report: ghostty_action_program_status_s?,
+        surfaceView: GhosttyNSView
+    ) -> Bool {
+        let state: Workspace.TerminalProgramState
+        switch report?.state ?? GHOSTTY_PROGRAM_STATUS_STATE_CLEAR {
+        case GHOSTTY_PROGRAM_STATUS_STATE_QUERY:
+            return true
+        case GHOSTTY_PROGRAM_STATUS_STATE_CLEAR: state = .clear
+        case GHOSTTY_PROGRAM_STATUS_STATE_IDLE: state = .idle
+        case GHOSTTY_PROGRAM_STATUS_STATE_WORKING: state = .working
+        case GHOSTTY_PROGRAM_STATUS_STATE_BLOCKED: state = .blocked
+        case GHOSTTY_PROGRAM_STATUS_STATE_DONE: state = .done
+        case GHOSTTY_PROGRAM_STATUS_STATE_ERROR: state = .error
+        default: return false
+        }
+
+        let agent: Workspace.TerminalProgramAgent?
+        switch report?.app ?? GHOSTTY_PROGRAM_STATUS_APP_UNSPECIFIED {
+        case GHOSTTY_PROGRAM_STATUS_APP_CODEX: agent = .codex
+        case GHOSTTY_PROGRAM_STATUS_APP_CLAUDE_CODE: agent = .claude
+        case GHOSTTY_PROGRAM_STATUS_APP_UNSPECIFIED: agent = nil
+        default: return false
+        }
+
+        var fields: [Substring: Substring] = [:]
+        if let report, let payload = report.payload, report.payload_len > 0 {
+            let bytes = UnsafeBufferPointer(start: payload, count: report.payload_len)
+            for field in String(decoding: bytes, as: UTF8.self).split(separator: ":") {
+                let parts = field.split(separator: "=", maxSplits: 1)
+                if parts.count == 2 {
+                    fields[parts[0]] = parts[1]
+                }
+            }
+        }
+
+        performOnMain {
+            guard let panelId = surfaceView.terminalSurface?.id,
+                  let workspace = AppDelegate.shared?.workspaceContainingPanel(
+                      panelId: panelId, preferredWorkspaceId: surfaceView.tabId
+                  )?.workspace else { return }
+
+            let shouldNotify = workspace.updateTerminalProgramStatus(
+                panelId: panelId,
+                agent: agent,
+                sessionID: fields["id"].map(String.init),
+                state: state
+            )
+            guard shouldNotify, let fallbackBody = state.notificationBody else { return }
+            func decode(_ field: Substring?) -> String? {
+                guard let field, let bytes = Data(base64Encoded: String(field)),
+                      let value = String(data: bytes, encoding: .utf8) else { return nil }
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            TerminalNotificationStore.shared.addNotification(
+                tabId: workspace.id,
+                surfaceId: panelId,
+                title: AgentSessionProviderID.claude.displayName,
+                subtitle: decode(fields["title"]) ?? "",
+                body: decode(fields["msg"]) ?? fallbackBody
+            )
+        }
+        return true
+    }
+
     private func handleAction(target: ghostty_target_s, action: ghostty_action_s) -> Bool {
         if target.tag != GHOSTTY_TARGET_SURFACE {
             if action.tag == GHOSTTY_ACTION_RELOAD_CONFIG ||
@@ -3289,32 +3355,12 @@ class GhosttyApp {
                 )
             }
             return true
-        case GHOSTTY_ACTION_CODEX_PROGRAM_STATUS, GHOSTTY_ACTION_COMMAND_FINISHED:
-            let programStatus = action.tag == GHOSTTY_ACTION_COMMAND_FINISHED
-                ? GHOSTTY_CODEX_PROGRAM_STATUS_CLEAR : action.action.codex_program_status
-            let status: Workspace.TerminalCodexStatus?
-            switch programStatus {
-            case GHOSTTY_CODEX_PROGRAM_STATUS_WORKING:
-                status = .running
-            case GHOSTTY_CODEX_PROGRAM_STATUS_BLOCKED:
-                status = .needsInput
-            case GHOSTTY_CODEX_PROGRAM_STATUS_IDLE,
-                 GHOSTTY_CODEX_PROGRAM_STATUS_DONE,
-                 GHOSTTY_CODEX_PROGRAM_STATUS_ERROR:
-                status = .idle
-            case GHOSTTY_CODEX_PROGRAM_STATUS_CLEAR:
-                status = nil
-            default:
-                return false
-            }
-            performOnMain {
-                guard let tabId = surfaceView.tabId,
-                      let panelId = surfaceView.terminalSurface?.id,
-                      let manager = AppDelegate.shared?.tabManagerFor(tabId: tabId),
-                      let workspace = manager.tabs.first(where: { $0.id == tabId }) else { return }
-                workspace.updateTerminalCodexStatus(panelId: panelId, status: status)
-            }
-            return true
+        case GHOSTTY_ACTION_PROGRAM_STATUS:
+            return handleTerminalProgramStatus(
+                action.action.program_status, surfaceView: surfaceView
+            )
+        case GHOSTTY_ACTION_COMMAND_FINISHED:
+            return handleTerminalProgramStatus(nil, surfaceView: surfaceView)
         case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
             guard let tabId = surfaceView.tabId else { return true }
             let surfaceId = surfaceView.terminalSurface?.id

@@ -48777,6 +48777,12 @@
             "state": "translated",
             "value": "タスクが完了しました"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务已完成"
+          }
         }
       }
     },
@@ -48793,6 +48799,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "入力待ち"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待输入"
           }
         }
       }
@@ -48912,6 +48924,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "エラー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "错误"
           }
         }
       }
@@ -183337,7 +183355,7 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Claude Code"
           }
         },

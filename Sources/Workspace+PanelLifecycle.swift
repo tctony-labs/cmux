@@ -6,10 +6,45 @@ import Foundation
 import CmuxSidebar
 
 extension Workspace {
-    enum TerminalCodexStatus: String, Sendable {
+    enum TerminalProgramAgent: String, CaseIterable, Sendable {
+        case codex
+        case claude = "claude_code"
+    }
+
+    struct TerminalProgram: Hashable, Sendable {
+        let agent: TerminalProgramAgent
+        let sessionID: String?
+    }
+
+    enum TerminalProgramState: String, Sendable {
+        case clear
         case idle
-        case running
-        case needsInput
+        case working
+        case blocked
+        case done
+        case error
+
+        var notificationBody: String? {
+            switch self {
+            case .done:
+                return String(
+                    localized: "agent.generic.notification.body.taskCompleted",
+                    defaultValue: "Task completed"
+                )
+            case .error:
+                return String(
+                    localized: "agent.generic.notification.subtitle.error",
+                    defaultValue: "Error"
+                )
+            case .blocked:
+                return String(
+                    localized: "agent.generic.notification.body.waitingForInput",
+                    defaultValue: "Waiting for input"
+                )
+            case .clear, .idle, .working:
+                return nil
+            }
+        }
     }
 
     private static let structuredAgentHookStatusKeys = AgentHibernationLifecycleStatusKeys.allowedStatusKeys
@@ -18,7 +53,7 @@ extension Workspace {
 
     func agentRuntimeState(forPanelId panelId: UUID) -> DetachedAgentRuntimeState? {
         let pidKeys = agentPIDKeysByPanelId[panelId] ?? []
-        let terminalCodexStatus = terminalCodexStatusesByPanelId[panelId]
+        let terminalProgramStatuses = terminalProgramStatusesByPanelId[panelId]
 
         var agentPIDsForPanel: [String: pid_t] = [:]
         var statusEntriesForPanel: [String: SidebarStatusEntry] = [:]
@@ -31,13 +66,13 @@ extension Workspace {
                 statusEntriesForPanel[statusKey] = statusEntry
             }
         }
-        guard !pidKeys.isEmpty || terminalCodexStatus != nil else { return nil }
+        guard !pidKeys.isEmpty || terminalProgramStatuses != nil else { return nil }
         return DetachedAgentRuntimeState(
             panelId: panelId,
             statusEntries: statusEntriesForPanel,
             agentPIDs: agentPIDsForPanel,
             agentPIDKeys: pidKeys,
-            terminalCodexStatus: terminalCodexStatus
+            terminalProgramStatuses: terminalProgramStatuses
         )
     }
 
@@ -158,16 +193,47 @@ extension Workspace {
         return Self.truthyStartupEnvironmentValues.contains(rawValue)
     }
 
-    func updateTerminalCodexStatus(panelId: UUID, status: TerminalCodexStatus?) {
-        guard terminalPanel(for: panelId) != nil,
-              terminalCodexStatusesByPanelId[panelId] != status else { return }
-        terminalCodexStatusesByPanelId[panelId] = status
+    /// Returns whether this transition should send a Claude notification.
+    @discardableResult
+    func updateTerminalProgramStatus(
+        panelId: UUID,
+        agent: TerminalProgramAgent?,
+        sessionID: String?,
+        state: TerminalProgramState
+    ) -> Bool {
+        guard terminalPanel(for: panelId) != nil else { return false }
+        var programs = terminalProgramStatusesByPanelId[panelId] ?? [:]
+        if state == .clear {
+            let remaining = programs.filter { program, _ in
+                let matchesAgent = agent == nil || program.agent == agent
+                let matchesSession = sessionID == nil || program.sessionID == sessionID
+                return !(matchesAgent && matchesSession)
+            }
+            guard remaining.count != programs.count else { return false }
+            terminalProgramStatusesByPanelId[panelId] = remaining.isEmpty ? nil : remaining
+            return false
+        }
+
+        guard let agent else { return false }
+        let program = TerminalProgram(agent: agent, sessionID: sessionID)
+        let previous = programs[program]
+        guard previous != state else { return false }
+        programs[program] = state
+        terminalProgramStatusesByPanelId[panelId] = programs
 #if DEBUG
         cmuxDebugLog(
-            "surface.codexStatus workspace=\(id.uuidString.prefix(5)) " +
-            "panel=\(panelId.uuidString.prefix(5)) status=\(status?.rawValue ?? "clear")"
+            "surface.programStatus workspace=\(id.uuidString.prefix(5)) " +
+            "panel=\(panelId.uuidString.prefix(5)) agent=\(agent.rawValue) state=\(state.rawValue)"
         )
 #endif
+        guard agent == .claude, !suppressesRawTerminalNotification(panelId: panelId) else {
+            return false
+        }
+        // Reopening an already-finished session can replay its last completion.
+        if state == .done {
+            return previous == .working || previous == .blocked
+        }
+        return state == .blocked || state == .error
     }
 
     func sidebarStatusEntriesVisibleForDisplay() -> [SidebarStatusEntry] {
@@ -175,28 +241,30 @@ extension Workspace {
         var entries = statusEntries.values.filter { entry in
             shouldDisplaySidebarStatusEntry(entry, visibleStructuredStatusKeys: visibleStructuredStatusKeys)
         }
-        if let terminalStatus = terminalCodexSidebarStatus() {
-            entries.removeAll { $0.key == terminalStatus.key }
-            entries.append(terminalStatus)
+        for agent in TerminalProgramAgent.allCases {
+            if let terminalStatus = terminalProgramSidebarStatus(agent: agent) {
+                entries.removeAll { $0.key == terminalStatus.key }
+                entries.append(terminalStatus)
+            }
         }
         return entries
     }
 
-    private func terminalCodexSidebarStatus() -> SidebarStatusEntry? {
-        let statuses = terminalCodexStatusesByPanelId.values
+    private func terminalProgramSidebarStatus(agent: TerminalProgramAgent) -> SidebarStatusEntry? {
+        let programs = terminalProgramStatusesByPanelId.values.lazy.flatMap { $0 }
         let value: String
         let icon: String
-        if statuses.contains(.running) {
+        if programs.contains(where: { $0.key.agent == agent && $0.value == .working }) {
             value = String(localized: "agent.generic.status.running", defaultValue: "Running")
             icon = "bolt.fill"
-        } else if statuses.contains(.needsInput) {
+        } else if programs.contains(where: { $0.key.agent == agent && $0.value == .blocked }) {
             value = String(localized: "feed.status.needsInput", defaultValue: "Needs input")
             icon = "bell.fill"
         } else {
             return nil
         }
         return SidebarStatusEntry(
-            key: "codex", value: value, icon: icon, color: "#4C8DFF", timestamp: .distantPast
+            key: agent.rawValue, value: value, icon: icon, color: "#4C8DFF", timestamp: .distantPast
         )
     }
 
@@ -216,7 +284,9 @@ extension Workspace {
         where panels[panelId] != nil {
             let statusKey = agentStatusKey(forAgentPIDKey: key)
             guard Self.structuredAgentHookStatusKeys.contains(statusKey),
-                  statusKey != "codex" || terminalCodexStatusesByPanelId[panelId] == nil,
+                  terminalProgramStatusesByPanelId[panelId]?.keys.contains(where: {
+                      $0.agent.rawValue == statusKey
+                  }) != true,
                   statusEntries[statusKey] != nil else {
                 continue
             }
@@ -235,7 +305,9 @@ extension Workspace {
         for key in agentPIDs.keys where agentPIDPanelIdsByKey[key] == nil {
             let statusKey = agentStatusKey(forAgentPIDKey: key)
             guard Self.structuredAgentHookStatusKeys.contains(statusKey),
-                  statusKey != "codex" || terminalCodexStatusesByPanelId.isEmpty,
+                  !terminalProgramStatusesByPanelId.values.contains(where: { programs in
+                      programs.keys.contains { $0.agent.rawValue == statusKey }
+                  }),
                   statusEntries[statusKey] != nil else {
                 continue
             }
@@ -324,10 +396,9 @@ extension Workspace {
 
     func adoptDetachedAgentRuntimeState(_ runtimeState: DetachedAgentRuntimeState?) {
         guard let runtimeState else { return }
-        updateTerminalCodexStatus(
-            panelId: runtimeState.panelId,
-            status: runtimeState.terminalCodexStatus
-        )
+        if let statuses = runtimeState.terminalProgramStatuses {
+            terminalProgramStatusesByPanelId[runtimeState.panelId] = statuses
+        }
         for (statusKey, statusEntry) in runtimeState.statusEntries {
             statusEntries[statusKey] = statusEntry
         }
@@ -394,7 +465,7 @@ extension Workspace {
         manualUnreadPanelIds.remove(panelId)
         manualUnreadMarkedAt.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
-        terminalCodexStatusesByPanelId.removeValue(forKey: panelId)
+        terminalProgramStatusesByPanelId.removeValue(forKey: panelId)
         clearAgentLifecycleStates(panelId: panelId)
         surfaceTTYNames.removeValue(forKey: panelId)
         discardRemotePTYSessionID(panelId: panelId)

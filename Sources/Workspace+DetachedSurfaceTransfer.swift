@@ -10,7 +10,7 @@ extension Workspace {
         let statusEntries: [String: SidebarStatusEntry]
         let agentPIDs: [String: pid_t]
         let agentPIDKeys: Set<String>
-        let terminalCodexStatus: TerminalCodexStatus?
+        let terminalProgramStatuses: [TerminalProgram: TerminalProgramState]?
     }
 
     struct DetachedSurfaceTransfer {
