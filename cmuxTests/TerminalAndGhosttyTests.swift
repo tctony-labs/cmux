@@ -987,6 +987,15 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
 @Suite(.serialized)
 @MainActor
 struct TerminalPortalWindowAttachmentRegressionTests {
+    private final class LayoutProbeView: NSView {
+        var layoutCount = 0
+
+        override func layout() {
+            super.layout()
+            layoutCount += 1
+        }
+    }
+
     private final class WindowAttachCallbackView: NSView {
         var onAttach: (() -> Void)?
 
@@ -1087,6 +1096,41 @@ struct TerminalPortalWindowAttachmentRegressionTests {
             surface.hostedView.superview is WindowTerminalHostView,
             "The deferred portal bind should reparent the terminal after the SwiftUI attachment turn"
         )
+    }
+
+    @Test
+    func portalGeometryCallbackResizesWithoutFlushingLayout() async throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        let content = try #require(window.contentView)
+        let anchor = NSView(frame: NSRect(x: 20, y: 20, width: 220, height: 180))
+        content.addSubview(anchor)
+        let terminal = GhosttyNSView(frame: anchor.bounds)
+        let hosted = GhosttySurfaceScrollView(surfaceView: terminal)
+        let portal = WindowTerminalPortal(window: window)
+        portal.bind(hostedView: hosted, to: anchor, visibleInUI: true)
+
+        let probe = LayoutProbeView(frame: anchor.bounds)
+        hosted.addSubview(probe)
+        probe.needsLayout = true
+        anchor.setFrameSize(NSSize(width: 290, height: 190))
+
+        portal.synchronizeHostedViewForAnchor(anchor, syncLayout: false)
+
+        #expect(hosted.frame.size == anchor.bounds.size)
+        #expect(terminal.frame.size == anchor.bounds.size)
+        #expect(probe.layoutCount == 0)
+
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        #expect(probe.layoutCount > 0)
     }
 }
 

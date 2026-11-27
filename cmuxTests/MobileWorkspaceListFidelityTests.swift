@@ -1,6 +1,7 @@
 import Testing
 import AppKit
 import Bonsplit
+import Combine
 
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
@@ -17,6 +18,36 @@ import Bonsplit
 @MainActor
 @Suite(.serialized)
 struct MobileWorkspaceListFidelityTests {
+    @Test
+    func splitGeometryPublishesOnlyTheLatestSnapshotOutsideTheLayoutCallback() async throws {
+        let manager = TabManager()
+        let workspace = try #require(manager.selectedWorkspace)
+        let controller = workspace.bonsplitController
+        var published: [LayoutSnapshot] = []
+        let observation = workspace.$tmuxLayoutSnapshot.dropFirst().compactMap { $0 }.sink {
+            published.append($0)
+        }
+        defer { observation.cancel() }
+
+        controller.setContainerFrame(CGRect(x: 0, y: 0, width: 640, height: 400))
+        workspace.splitTabBar(controller, didChangeGeometry: controller.layoutSnapshot())
+        controller.setContainerFrame(CGRect(x: 0, y: 0, width: 720, height: 400))
+        let latest = controller.layoutSnapshot()
+        workspace.splitTabBar(controller, didChangeGeometry: latest)
+        #expect(published.isEmpty)
+
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        #expect(published == [latest])
+
+        workspace.splitTabBar(controller, didChangeGeometry: controller.layoutSnapshot())
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        #expect(published == [latest])
+    }
+
     /// Builds a workspace with `count` terminals as tabs in a single pane so that
     /// a within-pane `reorderTab` genuinely changes their on-screen order. Returns
     /// the workspace and panel ids in spatial (tab) order.
